@@ -581,20 +581,27 @@ const renderPredictionFactors = (home, away) => {
 const renderFactorRow = (factor, homeName, awayName) => {
   const home = Number(factor.home || 0);
   const away = Number(factor.away || 0);
-  const total = Math.abs(home) + Math.abs(away) || 1;
-  const homeWidth = Math.max(8, Math.round((Math.abs(home) / total) * 100));
-  const awayWidth = Math.max(8, Math.round((Math.abs(away) / total) * 100));
+  const lowest = Math.min(home, away, 0);
+  const adjustedHome = home - lowest + 0.1;
+  const adjustedAway = away - lowest + 0.1;
+  const total = adjustedHome + adjustedAway || 1;
+  const homeWidth = Math.max(12, Math.round((adjustedHome / total) * 100));
+  const awayWidth = Math.max(12, Math.round((adjustedAway / total) * 100));
   const leader = home === away ? "equilibrado" : home > away ? homeName : awayName;
 
   return `
     <div class="factor-row">
       <div class="factor-head">
         <strong>${factor.label}</strong>
-        <span>${leader}</span>
+        <span>Vantagem: ${leader}</span>
       </div>
       <div class="factor-bars">
-        <span class="factor-bar home" style="width: ${homeWidth}%">${formatFactorValue(home)}</span>
-        <span class="factor-bar away" style="width: ${awayWidth}%">${formatFactorValue(away)}</span>
+        <span class="factor-bar home ${home < 0 ? "negative" : ""}" style="width: ${homeWidth}%">
+          ${homeName}: ${formatFactorValue(home)}
+        </span>
+        <span class="factor-bar away ${away < 0 ? "negative" : ""}" style="width: ${awayWidth}%">
+          ${awayName}: ${formatFactorValue(away)}
+        </span>
       </div>
       <small>${factor.note}</small>
     </div>
