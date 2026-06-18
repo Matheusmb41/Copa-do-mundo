@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Premonicao da Copa</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <nav class="screen-menu" aria-label="Navegacao principal">
+        <button class="menu-button active" type="button" data-screen-target="matches">Fase de grupos</button>
+        <button class="menu-button" type="button" data-screen-target="weights">Ranking dos times</button>
+      </nav>
+
+      <section class="scoreboard">
+        <aside class="screen-view summary-panel" data-screen="weights">
+          <h2>Ranking dos times</h2>
+          <div id="teamWeights" class="team-weights"></div>
+        </aside>
+
+        <section class="screen-view match-panel active" data-screen="matches">
+          <section class="data-panel" aria-label="Status dos dados">
+            <div>
+              <strong>Dados da Copa</strong>
+              <span id="dataStatus">Atualizando pelo backend...</span>
+            </div>
+          </section>
+
+          <div id="matchGrid" class="match-grid"></div>
+        </section>
+
+        <aside class="screen-view details-panel" data-screen="details">
+          <h2>Analise de premonicao</h2>
+          <div id="predictionDetails" class="prediction-details"></div>
+        </aside>
+      </section>
+    </main>
+
+    <script src="app.js"></script>
+  </body>
+</html>
