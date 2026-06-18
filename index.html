@@ -12,9 +12,15 @@
         <button class="menu-button active" type="button" data-screen-target="matches">Fase de grupos</button>
         <button class="menu-button" type="button" data-screen-target="groups">Grupos</button>
         <button class="menu-button" type="button" data-screen-target="weights">Ranking dos times</button>
+        <button class="menu-button" type="button" data-screen-target="stats">Estatisticas</button>
       </nav>
 
       <section class="scoreboard">
+        <section class="screen-view stats-panel" data-screen="stats">
+          <h2>Estatisticas da premonicao</h2>
+          <div id="predictionStats" class="prediction-stats"></div>
+        </section>
+
         <section class="screen-view groups-panel" data-screen="groups">
           <h2>Classificacao dos grupos</h2>
           <div id="groupsGrid" class="groups-grid"></div>
@@ -31,6 +37,14 @@
               <strong>Dados da Copa</strong>
               <span id="dataStatus">Atualizando pelo backend...</span>
             </div>
+          </section>
+
+          <section class="quick-filters" aria-label="Filtros de jogos">
+            <button class="filter-button active" type="button" data-match-filter="current">Atual</button>
+            <button class="filter-button" type="button" data-match-filter="today">Hoje</button>
+            <button class="filter-button" type="button" data-match-filter="live">Ao vivo</button>
+            <button class="filter-button" type="button" data-match-filter="next">Proximos</button>
+            <button class="filter-button" type="button" data-match-filter="all">Todos</button>
           </section>
 
           <div id="matchGrid" class="match-grid"></div>

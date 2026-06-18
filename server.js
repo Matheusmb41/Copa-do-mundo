@@ -471,6 +471,11 @@ async function buildEspnWorldCupPayload() {
     team.lastMatch = played
       ? `${record.points} pts, ${record.wins}-${record.draws}-${record.losses}, saldo ${goalDiff}; impacto jogadores ${team.playerImpact >= 0 ? "+" : ""}${team.playerImpact}.`
       : "Ainda nao jogou nesta Copa; peso preso ao ranking base.";
+  });
+
+  applyRankingMovement(events, teams);
+
+  Object.values(teams).forEach((team) => {
     delete team.sourceId;
   });
 
@@ -899,6 +904,72 @@ function sortStandingRows(a, b) {
     b.goalsFor - a.goalsFor ||
     a.name.localeCompare(b.name, "pt-BR")
   );
+}
+
+function applyRankingMovement(events, teams) {
+  const currentRows = rankingRows(teams);
+  const currentPositions = Object.fromEntries(currentRows.map((row) => [row.key, row.position]));
+
+  Object.entries(teams).forEach(([teamKey, team]) => {
+    if (team.placeholder || !team.sourceId) return;
+
+    const lastMatch = latestFinishedEventForTeam(events, team.sourceId);
+    if (!lastMatch) {
+      team.previousPosition = currentPositions[teamKey];
+      team.positionDelta = 0;
+      team.movement = "same";
+      return;
+    }
+
+    const beforeRows = rankingRows(teams, teamKey, previousWeightBeforeLastMatch(team, lastMatch, team.sourceId));
+    const previousPosition = beforeRows.find((row) => row.key === teamKey)?.position || currentPositions[teamKey];
+    const delta = previousPosition - currentPositions[teamKey];
+
+    team.previousPosition = previousPosition;
+    team.positionDelta = delta;
+    team.movement = delta > 0 ? "up" : delta < 0 ? "down" : "same";
+  });
+}
+
+function rankingRows(teams, overrideKey, overrideWeight) {
+  return Object.entries(teams)
+    .filter(([, team]) => !team.placeholder)
+    .map(([key, team]) => ({
+      key,
+      weight: key === overrideKey ? overrideWeight : team.weight,
+      name: team.name,
+    }))
+    .sort((a, b) => b.weight - a.weight || a.name.localeCompare(b.name, "pt-BR"))
+    .map((row, index) => ({ ...row, position: index + 1 }));
+}
+
+function latestFinishedEventForTeam(events, sourceId) {
+  return events
+    .filter((event) => {
+      const competition = event.competitions?.[0];
+      if (!competition?.status?.type?.completed) return false;
+
+      return (competition.competitors || []).some((competitor) => String(competitor.team.id) === String(sourceId));
+    })
+    .sort((a, b) => new Date(b.date) - new Date(a.date))[0];
+}
+
+function previousWeightBeforeLastMatch(team, event, sourceId) {
+  const competition = event.competitions?.[0];
+  const competitors = competition?.competitors || [];
+  const self = competitors.find((competitor) => String(competitor.team.id) === String(sourceId));
+  const opponent = competitors.find((competitor) => String(competitor.team.id) !== String(sourceId));
+  if (!self || !opponent) return team.weight;
+
+  const selfScore = Number(self.score);
+  const opponentScore = Number(opponent.score);
+  const scoreSwing = selfScore > opponentScore ? 1.7 : selfScore < opponentScore ? -1.7 : 0.2;
+  const goalSwing = clamp((selfScore - opponentScore) * 0.35, -1.4, 1.4);
+  const stats = statsObject(self.statistics);
+  const statSwing = clamp(numberStat(stats.shotsOnTarget) * 0.08 + numberStat(stats.totalShots) * 0.025, 0, 1.1);
+  const estimatedLastGameImpact = scoreSwing + goalSwing + statSwing;
+
+  return Number((team.weight - estimatedLastGameImpact).toFixed(1));
 }
 
 function publicStats(statistics = []) {
