@@ -10,6 +10,8 @@
   --blue: #5b9dff;
   --red: #ff6b6b;
   --yellow: #f3c94c;
+  --screen-menu-height: 49px;
+  --games-submenu-height: 50px;
 }
 
 * {
@@ -65,7 +67,7 @@ body {
 }
 
 .scoreboard {
-  min-height: calc(100vh - 49px);
+  min-height: calc(100vh - var(--screen-menu-height));
   background: var(--bg);
 }
 
@@ -159,6 +161,38 @@ body {
 .history-row span,
 .history-row small {
   color: var(--muted);
+}
+
+.history-row small.hit {
+  color: var(--green);
+}
+
+.history-row small.miss {
+  color: var(--red);
+}
+
+.calibration-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.calibration-item {
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #1a1d23;
+}
+
+.calibration-item strong {
+  display: block;
+  font-size: 18px;
+}
+
+.calibration-item span {
+  color: var(--muted);
+  font-size: 11px;
 }
 
 .groups-grid {
@@ -256,7 +290,10 @@ body {
 }
 
 .rank-move {
-  display: block;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
   margin-top: 3px;
   font-size: 10px;
   font-style: normal;
@@ -264,8 +301,17 @@ body {
   line-height: 1;
 }
 
-.rank-move span {
+.rank-move .sr-detail {
   display: none;
+}
+
+.rank-arrow {
+  font-size: 12px;
+  line-height: 1;
+}
+
+.rank-number {
+  line-height: 1;
 }
 
 .rank-move.up {
@@ -343,17 +389,21 @@ body {
   color: var(--red);
 }
 
-.quick-filters {
+.games-submenu {
+  position: sticky;
+  top: var(--screen-menu-height);
+  z-index: 9;
   display: flex;
   gap: 8px;
   padding: 12px 24px;
   border-bottom: 1px solid var(--line);
   background: #1a1d23;
-  overflow-x: auto;
+  overflow: visible;
 }
 
-.filter-button {
-  min-width: max-content;
+.subnav-button {
+  flex: 1 1 0;
+  min-width: 0;
   min-height: 32px;
   padding: 0 12px;
   border: 1px solid var(--line);
@@ -366,11 +416,19 @@ body {
   cursor: pointer;
 }
 
-.filter-button.active,
-.filter-button:hover {
+.subnav-button.active,
+.subnav-button:hover {
   color: var(--text);
   border-color: rgb(91 157 255 / 60%);
   background: #22446f;
+}
+
+.games-view {
+  display: none;
+}
+
+.games-view.active {
+  display: block;
 }
 
 .section-title {
@@ -394,7 +452,7 @@ body {
 
 .day-group {
   border-bottom: 1px solid var(--line);
-  scroll-margin-top: 56px;
+  scroll-margin-top: calc(var(--screen-menu-height) + var(--games-submenu-height) + 8px);
 }
 
 .day-heading {
@@ -413,7 +471,7 @@ body {
   position: relative;
   min-width: 0;
   min-height: 150px;
-  scroll-margin-top: 56px;
+  scroll-margin-top: calc(var(--screen-menu-height) + var(--games-submenu-height) + 8px);
   padding: 18px 24px;
   border-right: 1px solid var(--line);
   border-bottom: 1px solid var(--line);
@@ -458,6 +516,7 @@ body {
   height: 22px;
   display: inline-grid;
   place-items: center;
+  flex: 0 0 22px;
   border-radius: 3px;
   background: #101217;
   box-shadow: inset 0 0 0 1px rgb(255 255 255 / 16%);
@@ -468,9 +527,11 @@ body {
   width: 22px;
   height: 22px;
   display: block;
+  flex: 0 0 22px;
   border-radius: 3px;
-  object-fit: contain;
-  background: #101217;
+  object-fit: cover;
+  object-position: center;
+  background: transparent;
   box-shadow: inset 0 0 0 1px rgb(255 255 255 / 16%);
 }
 
@@ -610,6 +671,155 @@ body {
   line-height: 1.55;
 }
 
+.bracket-instructions {
+  padding: 14px 24px;
+  color: var(--green);
+  font-size: 13px;
+  font-weight: 700;
+  text-align: center;
+}
+
+.bracket-scroll {
+  overflow-x: auto;
+  padding: 0 24px 24px;
+}
+
+.bracket-board {
+  min-width: 1180px;
+}
+
+.bracket-board-split {
+  display: grid;
+  grid-template-columns: 1fr 190px 1fr;
+  gap: 28px;
+  align-items: stretch;
+}
+
+.bracket-wing {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(150px, 1fr));
+  gap: 22px;
+  align-items: stretch;
+}
+
+.bracket-column {
+  display: grid;
+  grid-template-rows: auto 1fr;
+  gap: 12px;
+  align-items: stretch;
+}
+
+.bracket-column h3,
+.center-match-block h3 {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  text-align: center;
+}
+
+.bracket-column-matches {
+  min-height: 720px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-around;
+  gap: 12px;
+}
+
+.bracket-match {
+  position: relative;
+  display: grid;
+  gap: 6px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #1a1d23;
+  cursor: pointer;
+}
+
+.bracket-match:hover {
+  background: var(--panel-soft);
+}
+
+.bracket-match.left::after,
+.bracket-match.right::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  width: 23px;
+  border-top: 1px dashed var(--line);
+}
+
+.bracket-match.left::after {
+  right: -24px;
+}
+
+.bracket-match.right::after {
+  left: -24px;
+}
+
+.left-wing .bracket-column.level-4 .bracket-match::after,
+.right-wing .bracket-column.level-1 .bracket-match::after {
+  border-color: var(--green);
+}
+
+.bracket-center {
+  position: relative;
+  min-height: 720px;
+}
+
+.center-main {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  right: 0;
+  width: 100%;
+  display: grid;
+  gap: 16px;
+  justify-items: center;
+  transform: translateY(-50%);
+}
+
+.center-match-block {
+  width: 100%;
+  display: grid;
+  gap: 10px;
+}
+
+.third-place-match {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 18px;
+}
+
+.bracket-match.center {
+  border-color: rgb(97 217 118 / 45%);
+}
+
+.bracket-team {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 8px;
+  align-items: center;
+  min-width: 0;
+  font-size: 12px;
+}
+
+.bracket-match.right .bracket-team {
+  grid-template-columns: auto 1fr auto;
+}
+
+.bracket-team span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bracket-match small {
+  color: var(--muted);
+  font-size: 11px;
+}
+
 .factor-list {
   display: grid;
   gap: 12px;
@@ -680,13 +890,35 @@ body {
 }
 
 @media (max-width: 760px) {
+  :root {
+    --screen-menu-height: 45px;
+  }
+
   .screen-menu {
     justify-content: stretch;
-    overflow-x: auto;
+    flex-wrap: nowrap;
+    overflow: visible;
   }
 
   .menu-button {
-    flex: 0 0 150px;
+    flex: 1 1 0;
+    max-width: none;
+    min-width: 0;
+    min-height: 44px;
+    padding: 0 4px;
+    font-size: clamp(10px, 2.7vw, 12px);
+  }
+
+  .games-submenu {
+    gap: 6px;
+    padding: 8px 10px;
+  }
+
+  .subnav-button {
+    min-height: 30px;
+    padding: 0 6px;
+    font-size: 11px;
+    white-space: nowrap;
   }
 
   .match-grid {

@@ -168,10 +168,11 @@ function rankingWeight(rank) {
 }
 
 function currentWeight(team) {
+  const calibration = modelCalibration();
   const base = rankingWeight(team.fifaRank);
-  const profile = (team.attack + team.defense - 2) * 9;
-  const playerImpact = team.playerImpact || 0;
-  return Number((base + team.form * 2.8 + profile + playerImpact).toFixed(1));
+  const profile = (team.attack + team.defense - 2) * 9 * calibration.profileMultiplier;
+  const playerImpact = (team.playerImpact || 0) * calibration.playerImpactMultiplier;
+  return Number((base + team.form * calibration.formMultiplier + profile + playerImpact).toFixed(1));
 }
 
 function clamp(value, min, max) {
@@ -179,16 +180,17 @@ function clamp(value, min, max) {
 }
 
 function predictMatch(match, teams) {
+  const calibration = modelCalibration();
   const home = teams[match.home];
   const away = teams[match.away];
   const homeWeight = currentWeight(home);
   const awayWeight = currentWeight(away);
-  const diff = homeWeight - awayWeight;
-  const drawChance = clamp(27 - Math.abs(diff) * 0.55, 9, 29);
+  const diff = (homeWeight - awayWeight) * calibration.diffMultiplier;
+  const drawChance = clamp(27 + calibration.drawBias - Math.abs(diff) * 0.55, 9, 34);
   const homeChance = clamp((100 - drawChance) / 2 + diff * 1.15, 7, 84);
   const awayChance = 100 - drawChance - homeChance;
-  const homeGoals = clamp(Math.round(1.15 + diff / 18 + (home.attack - away.defense) * 1.6), 0, 5);
-  const awayGoals = clamp(Math.round(1.05 - diff / 20 + (away.attack - home.defense) * 1.5), 0, 5);
+  const homeGoals = clamp(Math.round(1.15 + diff / 18 + (home.attack - away.defense) * 1.6 * calibration.profileMultiplier), 0, 5);
+  const awayGoals = clamp(Math.round(1.05 - diff / 20 + (away.attack - home.defense) * 1.5 * calibration.profileMultiplier), 0, 5);
   const favoriteChance = Math.round(Math.max(homeChance, awayChance));
   const confidence = clamp(Math.round(45 + Math.abs(diff) * 1.35), 42, 88);
 
@@ -491,6 +493,7 @@ async function buildEspnWorldCupPayload() {
     source: "espn-public",
     season,
     updatedAt: new Date().toISOString(),
+    calibration: modelCalibration(),
     teams,
     matches,
     groups,
@@ -798,7 +801,7 @@ function convertEspnEvent(event, teams) {
   const status = competition.status?.type?.completed ? "FT" : competition.status?.type?.state === "in" ? "LIVE" : "NS";
   const match = {
     id: Number(event.id),
-    group: competition.altGameNote || event.season?.slug || "FIFA World Cup",
+    group: displayRoundName(event, competition),
     day: formatMatchDay(event.date),
     time: formatMatchTime(event.date, { short: status }),
     timestamp: Math.floor(new Date(event.date).getTime() / 1000),
@@ -819,6 +822,25 @@ function convertEspnEvent(event, teams) {
 
   match.prediction = status === "FT" ? null : predictMatch(match, teams);
   return match;
+}
+
+function displayRoundName(event, competition) {
+  const note = competition.altGameNote || "";
+  if (/Group\s+[A-Z]/i.test(note)) return note;
+
+  const date = new Date(event.date);
+  const month = date.getUTCMonth() + 1;
+  const day = date.getUTCDate();
+
+  if ((month === 6 && day >= 28) || (month === 7 && day <= 3) || (month === 7 && day === 4 && date.getUTCHours() < 12)) return "Round of 32";
+  if (month === 7 && ((day === 4 && date.getUTCHours() >= 12) || (day >= 5 && day <= 7))) return "Round of 16";
+  if (month === 7 && day >= 9 && day <= 12) return "Quarterfinal";
+  if (month === 7 && day >= 14 && day <= 15) return "Semifinal";
+  if (month === 7 && day === 17) return "Semifinal";
+  if (month === 7 && day === 18) return "3rd Place";
+  if (month === 7 && day === 19) return "Final";
+
+  return note || event.season?.slug || "FIFA World Cup";
 }
 
 function buildGroupStandings(matches, teams) {
@@ -921,10 +943,13 @@ function applyRankingMovement(events, teams) {
       return;
     }
 
-    const beforeRows = rankingRows(teams, teamKey, previousWeightBeforeLastMatch(team, lastMatch, team.sourceId));
+    const previousWeight = previousWeightBeforeLastMatch(team, lastMatch, team.sourceId, teams);
+    const beforeRows = rankingRows(teams, teamKey, previousWeight);
     const previousPosition = beforeRows.find((row) => row.key === teamKey)?.position || currentPositions[teamKey];
     const delta = previousPosition - currentPositions[teamKey];
 
+    team.previousWeight = previousWeight;
+    team.weightDelta = Number((team.weight - previousWeight).toFixed(1));
     team.previousPosition = previousPosition;
     team.positionDelta = delta;
     team.movement = delta > 0 ? "up" : delta < 0 ? "down" : "same";
@@ -954,7 +979,7 @@ function latestFinishedEventForTeam(events, sourceId) {
     .sort((a, b) => new Date(b.date) - new Date(a.date))[0];
 }
 
-function previousWeightBeforeLastMatch(team, event, sourceId) {
+function previousWeightBeforeLastMatch(team, event, sourceId, teams) {
   const competition = event.competitions?.[0];
   const competitors = competition?.competitors || [];
   const self = competitors.find((competitor) => String(competitor.team.id) === String(sourceId));
@@ -963,13 +988,29 @@ function previousWeightBeforeLastMatch(team, event, sourceId) {
 
   const selfScore = Number(self.score);
   const opponentScore = Number(opponent.score);
-  const scoreSwing = selfScore > opponentScore ? 1.7 : selfScore < opponentScore ? -1.7 : 0.2;
+  const opponentTeam = Object.values(teams).find((candidate) => String(candidate.sourceId) === String(opponent.team.id));
+  const expectedGap = rankingWeight(team.fifaRank) - rankingWeight(opponentTeam?.fifaRank || 75);
+  const scoreSwing = matchScoreSwing(selfScore, opponentScore, expectedGap);
   const goalSwing = clamp((selfScore - opponentScore) * 0.35, -1.4, 1.4);
   const stats = statsObject(self.statistics);
   const statSwing = clamp(numberStat(stats.shotsOnTarget) * 0.08 + numberStat(stats.totalShots) * 0.025, 0, 1.1);
   const estimatedLastGameImpact = scoreSwing + goalSwing + statSwing;
 
   return Number((team.weight - estimatedLastGameImpact).toFixed(1));
+}
+
+function matchScoreSwing(selfScore, opponentScore, expectedGap) {
+  if (selfScore > opponentScore) {
+    return expectedGap >= 8 ? 1.0 : expectedGap <= -8 ? 2.5 : 1.7;
+  }
+
+  if (selfScore < opponentScore) {
+    return expectedGap >= 8 ? -2.5 : expectedGap <= -8 ? -1.0 : -1.7;
+  }
+
+  if (expectedGap >= 3) return -0.7;
+  if (expectedGap <= -3) return 1.2;
+  return 0.1;
 }
 
 function publicStats(statistics = []) {
@@ -1125,6 +1166,51 @@ function evaluatePrediction(prediction, actualScore) {
   };
 }
 
+function modelCalibration() {
+  const records = Object.values(predictionHistory.matches || {});
+  const evaluated = records.filter((record) => record.evaluation && record.initialPrediction && record.result);
+  const total = evaluated.length;
+
+  if (!total) {
+    return defaultCalibration(0);
+  }
+
+  const actualDraws = evaluated.filter((record) => record.result.winner === "draw").length;
+  const predictedDraws = evaluated.filter((record) => record.initialPrediction.winner === "draw").length;
+  const directionHits = evaluated.filter((record) => record.evaluation.direction).length;
+  const exactHits = evaluated.filter((record) => record.evaluation.exactScore).length;
+  const confidenceFactor = clamp(total / 12, 0.15, 1);
+  const directionRate = directionHits / total;
+  const exactRate = exactHits / total;
+  const drawGap = (actualDraws - predictedDraws) / total;
+
+  return {
+    evaluated: total,
+    confidenceFactor: Number(confidenceFactor.toFixed(2)),
+    directionRate: Number(directionRate.toFixed(2)),
+    exactRate: Number(exactRate.toFixed(2)),
+    drawBias: Number(clamp(drawGap * 10 * confidenceFactor, -4, 6).toFixed(2)),
+    diffMultiplier: Number(clamp(1 - (0.55 - directionRate) * 0.35 * confidenceFactor, 0.82, 1.12).toFixed(2)),
+    formMultiplier: Number(clamp(2.8 - (0.5 - directionRate) * 0.45 * confidenceFactor, 2.35, 3.15).toFixed(2)),
+    profileMultiplier: Number(clamp(1 - (0.45 - exactRate) * 0.18 * confidenceFactor, 0.85, 1.08).toFixed(2)),
+    playerImpactMultiplier: Number(clamp(1 - (0.5 - directionRate) * 0.25 * confidenceFactor, 0.82, 1.15).toFixed(2)),
+  };
+}
+
+function defaultCalibration(evaluated) {
+  return {
+    evaluated,
+    confidenceFactor: 0,
+    directionRate: 0,
+    exactRate: 0,
+    drawBias: 0,
+    diffMultiplier: 1,
+    formMultiplier: 2.8,
+    profileMultiplier: 1,
+    playerImpactMultiplier: 1,
+  };
+}
+
 function getPredictionHistorySummary() {
   const records = Object.values(predictionHistory.matches);
   const evaluated = records.filter((record) => record.evaluation);
@@ -1148,6 +1234,7 @@ function getPredictionHistorySummary() {
     awaitingResult: awaitingResult.length,
     resultWithoutPrediction: resultWithoutPrediction.length,
     summary,
+    calibration: modelCalibration(),
     matches: records.sort((a, b) => (a.date || 0) - (b.date || 0)),
   };
 }

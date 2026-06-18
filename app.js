@@ -1,7 +1,7 @@
 let appData = null;
 let selectedMatchId = null;
 let predictionHistory = null;
-let matchFilter = "current";
+let gamesView = "groups";
 
 if ("scrollRestoration" in history) {
   history.scrollRestoration = "manual";
@@ -123,7 +123,7 @@ const sameCalendarDay = (a, b) =>
   a.getDate() === b.getDate();
 
 const currentTargetMatch = () => {
-  const datedMatches = appData.matches.filter((match) => match.timestamp);
+  const datedMatches = appData.matches.filter((match) => match.timestamp && isGroupStageMatch(match));
   if (!datedMatches.length) return appData.matches[0];
 
   const now = new Date();
@@ -191,7 +191,7 @@ const renderWeights = () => {
                 <strong>${team.name}</strong>
               </div>
               <span class="weight-value">${team.weight.toFixed(1)}</span>
-              <div class="weight-meta">Ranking FIFA #${team.fifaRank} - forma ${team.form >= 0 ? "+" : ""}${team.form}</div>
+              <div class="weight-meta">Ranking FIFA #${team.fifaRank} - forma ${team.form >= 0 ? "+" : ""}${team.form} - peso ${team.weightDelta > 0 ? "+" : ""}${Number(team.weightDelta || 0).toFixed(1)}</div>
             </article>
           `;
         })
@@ -207,15 +207,22 @@ const renderWeights = () => {
 };
 
 const rankingMovement = (team) => {
+  const weightDelta = Number(team.weightDelta || 0);
   if (!team.previousPosition || team.positionDelta === 0) {
     return `<small class="rank-move same">=</small>`;
   }
 
   const direction = team.positionDelta > 0 ? "up" : "down";
-  const signal = team.positionDelta > 0 ? "+" : "-";
-  const label = team.positionDelta > 0 ? `subiu ${team.positionDelta}` : `caiu ${Math.abs(team.positionDelta)}`;
+  const signal = team.positionDelta > 0 ? "&uarr;" : "&darr;";
+  const positionLabel =
+    team.positionDelta > 0
+      ? `subiu ${team.positionDelta}`
+      : team.positionDelta < 0
+        ? `caiu ${Math.abs(team.positionDelta)}`
+        : "mesma posicao";
+  const weightLabel = weightDelta ? `peso ${weightDelta > 0 ? "+" : ""}${weightDelta.toFixed(1)}` : "peso estavel";
 
-  return `<small class="rank-move ${direction}" title="Antes do ultimo jogo: ${team.previousPosition}o lugar">${signal} ${Math.abs(team.positionDelta)}<span>${label}</span></small>`;
+  return `<small class="rank-move ${direction}" title="Antes do ultimo jogo: ${team.previousPosition}o lugar; ${weightLabel}"><span class="rank-arrow">${signal}</span><span class="rank-number">${Math.abs(team.positionDelta)}</span><span class="sr-detail">${positionLabel}; ${weightLabel}</span></small>`;
 };
 
 const renderGroups = () => {
@@ -301,13 +308,14 @@ const renderPredictionStats = () => {
 
   const { total, evaluated, awaitingResult, resultWithoutPrediction, summary, matches } = predictionHistory;
   const evaluatedMatches = (matches || []).filter((match) => match.evaluation).slice(-8).reverse();
+  const wrongDirection = Math.max(0, evaluated - (summary.direction || 0));
 
   container.innerHTML = `
     <section class="stats-overview">
       ${statCard("Premonicoes guardadas", total)}
       ${statCard("Avaliadas", evaluated)}
       ${statCard("Aguardando resultado", awaitingResult)}
-      ${statCard("Sem previsao anterior", resultWithoutPrediction)}
+      ${statCard("Erros de resultado", wrongDirection)}
     </section>
     <section class="accuracy-grid">
       ${accuracyCard("Placar exato", summary.exactScore, evaluated)}
@@ -315,6 +323,7 @@ const renderPredictionStats = () => {
       ${accuracyCard("Vencedor", summary.winner, evaluated)}
       ${accuracyCard("Empate", summary.draw, evaluated)}
     </section>
+    ${renderCalibration(predictionHistory.calibration)}
     <section class="details-card">
       <h3>Ultimas avaliacoes</h3>
       ${evaluatedMatches.length ? renderEvaluatedMatches(evaluatedMatches) : "<p>Nenhum jogo com premonicao anterior foi finalizado ainda.</p>"}
@@ -327,6 +336,32 @@ const statCard = (label, value) => `
     <strong>${value ?? 0}</strong>
     <span>${label}</span>
   </article>
+`;
+
+const renderCalibration = (calibration) => {
+  if (!calibration) return "";
+
+  return `
+    <section class="details-card">
+      <h3>Ajuste automatico do modelo</h3>
+      <div class="calibration-grid">
+        ${calibrationItem("Jogos avaliados", calibration.evaluated)}
+        ${calibrationItem("Forca da amostra", `${Math.round((calibration.confidenceFactor || 0) * 100)}%`)}
+        ${calibrationItem("Peso da forma", calibration.formMultiplier)}
+        ${calibrationItem("Impacto jogadores", calibration.playerImpactMultiplier)}
+        ${calibrationItem("Agressividade", calibration.diffMultiplier)}
+        ${calibrationItem("Tendencia a empate", calibration.drawBias > 0 ? `+${calibration.drawBias}` : calibration.drawBias)}
+      </div>
+      <p>Esses parametros mudam conforme as premonicoes sao avaliadas. Com poucos jogos, o ajuste e propositalmente pequeno.</p>
+    </section>
+  `;
+};
+
+const calibrationItem = (label, value) => `
+  <div class="calibration-item">
+    <strong>${value}</strong>
+    <span>${label}</span>
+  </div>
 `;
 
 const accuracyCard = (label, value, total) => `
@@ -348,7 +383,7 @@ const renderEvaluatedMatches = (matches) => `
           <strong>${match.home} x ${match.away}</strong>
           <span>Premonicao: ${match.initialPrediction.homeGoals}-${match.initialPrediction.awayGoals}</span>
           <span>Placar: ${match.result.homeGoals}-${match.result.awayGoals}</span>
-          <small>${match.evaluation.exactScore ? "Placar exato" : match.evaluation.direction ? "Direcao correta" : "Errou direcao"}</small>
+          <small class="${match.evaluation.direction ? "hit" : "miss"}">${match.evaluation.exactScore ? "Placar exato" : match.evaluation.direction ? "Direcao correta" : "Errou"}</small>
         </article>
       `)
       .join("")}
@@ -359,13 +394,14 @@ const renderMatches = () => {
   const container = document.querySelector("#matchGrid");
   const targetMatch = currentTargetMatch();
   const activeDay = targetMatch?.day;
-  const visibleMatches = filteredMatches(targetMatch);
+  const visibleMatches = appData.matches.filter(isGroupStageMatch);
+  const activeMatchId = selectedMatchId ?? targetMatch?.id ?? visibleMatches[0]?.id;
 
   if (!visibleMatches.length) {
     container.innerHTML = `
       <article class="details-card match-empty">
-        <h3>Nenhum jogo neste filtro</h3>
-        <p>Use outro filtro para ver mais confrontos.</p>
+        <h3>Nenhum jogo de fase de grupos</h3>
+        <p>A fonte ainda nao retornou os confrontos dessa fase.</p>
       </article>
     `;
     return;
@@ -380,15 +416,14 @@ const renderMatches = () => {
   container.innerHTML = Object.entries(matchesByDay)
     .map(([day, dayMatches], dayIndex) => {
       const cards = dayMatches
-        .map((match, matchIndex) => {
+        .map((match) => {
           const home = appData.teams[match.home];
           const away = appData.teams[match.away];
           const score = scoreFor(match);
-          const active = (selectedMatchId ?? appData.matches[0]?.id) === match.id;
-          const initialActive = selectedMatchId === null && dayIndex === 0 && matchIndex === 0;
+          const active = activeMatchId === match.id;
 
           return `
-            <article class="match-card${active || initialActive ? " active" : ""}" data-match-id="${match.id}" data-current-match="${match.id === targetMatch?.id}">
+            <article class="match-card${active ? " active" : ""}" data-match-id="${match.id}" data-current-match="${match.id === targetMatch?.id}">
               <div class="chance-pill ${isFinished(match) ? "real" : ""}">${score.chance}</div>
               <div class="match-group">${match.group}</div>
               <div class="team-line">
@@ -435,28 +470,143 @@ const renderMatches = () => {
   });
 };
 
-const filteredMatches = (targetMatch) => {
-  const now = new Date();
-  const today = (match) => match.timestamp && sameCalendarDay(new Date(match.timestamp * 1000), now);
+const isGroupStageMatch = (match) => /(Group|Grupo)\s+[A-Z]/i.test(match.group || "");
 
-  if (matchFilter === "today") {
-    return appData.matches.filter(today);
+const isKnockoutMatch = (match) => !isGroupStageMatch(match);
+
+const renderKnockoutBracket = () => {
+  const container = document.querySelector("#knockoutBracket");
+  if (!container) return;
+
+  const knockoutMatches = appData.matches.filter(isKnockoutMatch);
+  if (!knockoutMatches.length) {
+    container.innerHTML = `
+      <article class="details-card">
+        <h3>Eliminatorias indisponiveis</h3>
+        <p>A fonte ainda nao retornou os confrontos do mata-mata.</p>
+      </article>
+    `;
+    return;
   }
 
-  if (matchFilter === "live") {
-    return appData.matches.filter(isLive);
-  }
+  const rounds = groupKnockoutRounds(knockoutMatches);
+  const round32 = rounds.find((round) => round.key === "Round of 32")?.matches || [];
+  const round16 = rounds.find((round) => round.key === "Round of 16")?.matches || [];
+  const quarters = rounds.find((round) => round.key === "Quarterfinal")?.matches || [];
+  const semis = rounds.find((round) => round.key === "Semifinal")?.matches || [];
+  const thirdPlace = rounds.find((round) => round.key === "3rd Place")?.matches?.[0];
+  const final = rounds.find((round) => round.key === "Final")?.matches?.[0];
 
-  if (matchFilter === "next") {
-    return appData.matches.filter((match) => !isFinished(match) && new Date(match.timestamp * 1000) >= now);
-  }
+  const leftRounds = [
+    { name: "16 avos", matches: round32.slice(0, 8) },
+    { name: "Oitavas", matches: round16.slice(0, 4) },
+    { name: "Quartas", matches: quarters.slice(0, 2) },
+    { name: "Semifinal", matches: semis.slice(0, 1) },
+  ];
+  const rightRounds = [
+    { name: "Semifinal", matches: semis.slice(1, 2) },
+    { name: "Quartas", matches: quarters.slice(2, 4) },
+    { name: "Oitavas", matches: round16.slice(4, 8) },
+    { name: "16 avos", matches: round32.slice(8, 16) },
+  ];
 
-  if (matchFilter === "current") {
-    if (!targetMatch) return appData.matches;
-    return appData.matches.filter((match) => match.day === targetMatch.day);
-  }
+  container.innerHTML = `
+    <div class="bracket-instructions">Clique em um confronto para ver a premonicao.</div>
+    <div class="bracket-scroll">
+      <div class="bracket-board bracket-board-split">
+        <div class="bracket-wing left-wing">
+          ${leftRounds.map((round, index) => renderBracketColumn(round, "left", index)).join("")}
+        </div>
+        <div class="bracket-center">
+          <div class="center-main">
+            ${final ? renderCenterMatch("Final", final, "final-match") : ""}
+          </div>
+          ${thirdPlace ? renderCenterMatch("3o lugar", thirdPlace, "third-place-match") : ""}
+        </div>
+        <div class="bracket-wing right-wing">
+          ${rightRounds.map((round, index) => renderBracketColumn(round, "right", index)).join("")}
+        </div>
+      </div>
+    </div>
+  `;
 
-  return appData.matches;
+  document.querySelectorAll(".bracket-match").forEach((card) => {
+    card.addEventListener("click", () => {
+      selectedMatchId = Number(card.dataset.matchId);
+      renderDetails(selectedMatchId);
+      showScreen("details");
+    });
+  });
+};
+
+const groupKnockoutRounds = (matches) => {
+  const roundOrder = ["Round of 32", "Round of 16", "Quarterfinal", "Semifinal", "3rd Place", "Final"];
+  const roundNames = {
+    "Round of 32": "16 avos",
+    "Round of 16": "Oitavas",
+    Quarterfinal: "Quartas",
+    Semifinal: "Semifinais",
+    "3rd Place": "3o lugar",
+    Final: "Final",
+  };
+
+  return roundOrder
+    .map((key) => {
+      const roundMatches = matches.filter((match) => (match.group || "").includes(key));
+      return {
+        key,
+        name: roundNames[key],
+        matches: roundMatches.sort((a, b) => a.timestamp - b.timestamp),
+      };
+    })
+    .filter((round) => round.matches.length);
+};
+
+const renderBracketRound = (round) => `
+  <section class="bracket-round">
+    <h3>${round.name}</h3>
+    <div class="bracket-round-matches">
+      ${round.matches.map(renderBracketMatch).join("")}
+    </div>
+  </section>
+`;
+
+const renderBracketColumn = (round, side, index) => `
+  <section class="bracket-column ${side} level-${index + 1}">
+    <h3>${round.name}</h3>
+    <div class="bracket-column-matches">
+      ${round.matches.map((match) => renderBracketMatch(match, side)).join("")}
+    </div>
+  </section>
+`;
+
+const renderCenterMatch = (label, match, extraClass = "") => `
+  <section class="center-match-block ${extraClass}">
+    <h3>${label}</h3>
+    ${renderBracketMatch(match, "center")}
+  </section>
+`;
+
+const renderBracketMatch = (match, side = "") => {
+  const home = appData.teams[match.home];
+  const away = appData.teams[match.away];
+  const score = scoreFor(match);
+
+  return `
+    <article class="bracket-match ${side}" data-match-id="${match.id}">
+      <div class="bracket-team">
+        ${teamMark(home)}
+        <span>${home.name}</span>
+        <strong>${score.home}</strong>
+      </div>
+      <div class="bracket-team">
+        ${teamMark(away)}
+        <span>${away.name}</span>
+        <strong>${score.away}</strong>
+      </div>
+      <small>${match.day} - ${isFinished(match) ? "Finalizado" : match.time}</small>
+    </article>
+  `;
 };
 
 const probabilityRow = (label, value) => `
@@ -476,7 +626,7 @@ const statRow = (label, homeValue, awayValue, suffix = "") => `
 `;
 
 const renderDetails = (matchId) => {
-  const selectedId = matchId ?? selectedMatchId ?? appData.matches[0]?.id;
+  const selectedId = matchId ?? selectedMatchId ?? currentTargetMatch()?.id ?? appData.matches[0]?.id;
   const match = appData.matches.find((item) => item.id === selectedId);
   const container = document.querySelector("#predictionDetails");
 
@@ -652,6 +802,7 @@ const renderApp = () => {
   renderGroups();
   renderPredictionStats();
   renderMatches();
+  renderKnockoutBracket();
   renderDetails();
 };
 
@@ -667,14 +818,14 @@ const loadBackendData = async () => {
     }
 
     appData = data;
-    selectedMatchId = data.matches[0]?.id ?? null;
+    selectedMatchId = null;
     await loadPredictionHistory();
     renderApp();
     setDataStatus("Dados atualizados.", "ok");
     requestAnimationFrame(scrollToCurrentMatch);
   } catch (error) {
     appData = fallbackData;
-    selectedMatchId = fallbackData.matches[0]?.id ?? null;
+    selectedMatchId = null;
     renderApp();
     setDataStatus(`${error.message} Usando dados locais temporarios.`, "error");
   }
@@ -712,12 +863,19 @@ document.querySelectorAll("[data-screen-target]").forEach((button) => {
   });
 });
 
-document.querySelectorAll("[data-match-filter]").forEach((button) => {
+document.querySelectorAll("[data-games-view]").forEach((button) => {
   button.addEventListener("click", () => {
-    matchFilter = button.dataset.matchFilter;
-    document.querySelectorAll("[data-match-filter]").forEach((item) => item.classList.toggle("active", item === button));
-    renderMatches();
-    requestAnimationFrame(scrollToCurrentMatch);
+    gamesView = button.dataset.gamesView;
+    document.querySelectorAll("[data-games-view]").forEach((item) => item.classList.toggle("active", item === button));
+    document.querySelectorAll(".games-view").forEach((view) => view.classList.toggle("active", view.id === `${gamesView === "groups" ? "groupStage" : "knockout"}View`));
+
+    if (gamesView === "groups") {
+      renderMatches();
+      requestAnimationFrame(scrollToCurrentMatch);
+    } else {
+      renderKnockoutBracket();
+      requestAnimationFrame(scrollToTop);
+    }
   });
 });
 

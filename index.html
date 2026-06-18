@@ -9,7 +9,7 @@
   <body>
     <main class="app-shell">
       <nav class="screen-menu" aria-label="Navegacao principal">
-        <button class="menu-button active" type="button" data-screen-target="matches">Fase de grupos</button>
+        <button class="menu-button active" type="button" data-screen-target="matches">Jogos</button>
         <button class="menu-button" type="button" data-screen-target="groups">Grupos</button>
         <button class="menu-button" type="button" data-screen-target="weights">Ranking dos times</button>
         <button class="menu-button" type="button" data-screen-target="stats">Estatisticas</button>
@@ -39,15 +39,18 @@
             </div>
           </section>
 
-          <section class="quick-filters" aria-label="Filtros de jogos">
-            <button class="filter-button active" type="button" data-match-filter="current">Atual</button>
-            <button class="filter-button" type="button" data-match-filter="today">Hoje</button>
-            <button class="filter-button" type="button" data-match-filter="live">Ao vivo</button>
-            <button class="filter-button" type="button" data-match-filter="next">Proximos</button>
-            <button class="filter-button" type="button" data-match-filter="all">Todos</button>
+          <section class="games-submenu" aria-label="Tipo de jogos">
+            <button class="subnav-button active" type="button" data-games-view="groups">Fase de grupos</button>
+            <button class="subnav-button" type="button" data-games-view="knockout">Eliminatorias</button>
           </section>
 
-          <div id="matchGrid" class="match-grid"></div>
+          <div id="groupStageView" class="games-view active">
+            <div id="matchGrid" class="match-grid"></div>
+          </div>
+
+          <div id="knockoutView" class="games-view">
+            <div id="knockoutBracket" class="knockout-bracket"></div>
+          </div>
         </section>
 
         <aside class="screen-view details-panel" data-screen="details">
