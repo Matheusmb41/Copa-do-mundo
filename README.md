@@ -35,3 +35,21 @@ O backend usa o endpoint publico da ESPN para jogos da Copa:
 ```txt
 https://site.api.espn.com/apis/site/v2/sports/soccer/fifa.world/scoreboard
 ```
+
+## Historico de premonicoes
+
+O backend registra snapshots das premonicoes em:
+
+```txt
+data/prediction-history.json
+```
+
+Esse arquivo alimenta o endpoint:
+
+```txt
+/api/prediction-history
+```
+
+Ele guarda previsoes feitas antes dos jogos e, quando o placar real aparece, calcula acertos de placar exato, direcao do resultado, vencedor e empate.
+
+Para uso definitivo em producao, troque esse arquivo por um banco persistente, como Render Postgres ou Supabase.

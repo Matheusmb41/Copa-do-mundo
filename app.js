@@ -1,6 +1,10 @@
 let appData = null;
 let selectedMatchId = null;
 
+if ("scrollRestoration" in history) {
+  history.scrollRestoration = "manual";
+}
+
 const fallbackData = {
   source: "fallback",
   updatedAt: new Date().toISOString(),
@@ -62,6 +66,7 @@ const fallbackData = {
       prediction: null,
     },
   ],
+  groups: [],
 };
 
 const teamMark = (team) => {
@@ -114,22 +119,35 @@ const sameCalendarDay = (a, b) =>
   a.getMonth() === b.getMonth() &&
   a.getDate() === b.getDate();
 
-const currentMatchDay = () => {
+const currentTargetMatch = () => {
   const datedMatches = appData.matches.filter((match) => match.timestamp);
-  if (!datedMatches.length) return appData.matches[0]?.day;
+  if (!datedMatches.length) return appData.matches[0];
 
   const now = new Date();
-  const todayMatch = datedMatches.find((match) => sameCalendarDay(new Date(match.timestamp * 1000), now));
-  if (todayMatch) return todayMatch.day;
+  const todayMatches = datedMatches.filter((match) => sameCalendarDay(new Date(match.timestamp * 1000), now));
+  const liveMatch = todayMatches.find((match) => match.status === "LIVE");
+  if (liveMatch) return liveMatch;
+
+  const nextTodayMatch = todayMatches.find((match) => new Date(match.timestamp * 1000) >= now);
+  if (nextTodayMatch) return nextTodayMatch;
+
+  const lastTodayMatch = todayMatches[todayMatches.length - 1];
+  if (lastTodayMatch) return lastTodayMatch;
 
   const todayStart = new Date(now);
   todayStart.setHours(0, 0, 0, 0);
   const nextMatch = datedMatches.find((match) => new Date(match.timestamp * 1000) >= todayStart);
 
-  return nextMatch?.day || datedMatches[datedMatches.length - 1]?.day;
+  return nextMatch || datedMatches[datedMatches.length - 1];
 };
 
-const scrollToCurrentDay = () => {
+const scrollToCurrentMatch = () => {
+  const currentMatch = document.querySelector('.match-card[data-current-match="true"]');
+  if (currentMatch) {
+    currentMatch.scrollIntoView({ behavior: "auto", block: "start" });
+    return;
+  }
+
   const currentGroup = document.querySelector('.day-group[data-current-day="true"]');
   if (!currentGroup) return;
 
@@ -163,9 +181,72 @@ const renderWeights = () => {
   container.innerHTML = teams;
 };
 
+const renderGroups = () => {
+  const container = document.querySelector("#groupsGrid");
+  if (!container) return;
+
+  const groups = appData.groups || [];
+  if (!groups.length) {
+    container.innerHTML = `
+      <article class="details-card">
+        <h3>Grupos indisponiveis</h3>
+        <p>A fonte ainda nao retornou jogos com identificacao de grupo.</p>
+      </article>
+    `;
+    return;
+  }
+
+  container.innerHTML = groups
+    .map((group) => {
+      const rows = group.teams
+        .map((team) => `
+          <tr>
+            <td class="team-cell">
+              <span class="standing-position">${team.position}</span>
+              ${team.logo ? `<img class="team-logo" src="${team.logo}" alt="" />` : ""}
+              <span>${team.name}</span>
+            </td>
+            <td>${team.played}</td>
+            <td>${team.wins}</td>
+            <td>${team.draws}</td>
+            <td>${team.losses}</td>
+            <td>${team.goalsFor}</td>
+            <td>${team.goalsAgainst}</td>
+            <td>${team.goalDifference}</td>
+            <td><strong>${team.points}</strong></td>
+          </tr>
+        `)
+        .join("");
+
+      return `
+        <article class="group-card">
+          <h3>${group.name}</h3>
+          <table class="group-table">
+            <thead>
+              <tr>
+                <th>Selecao</th>
+                <th>J</th>
+                <th>V</th>
+                <th>E</th>
+                <th>D</th>
+                <th>GP</th>
+                <th>GC</th>
+                <th>SG</th>
+                <th>Pts</th>
+              </tr>
+            </thead>
+            <tbody>${rows}</tbody>
+          </table>
+        </article>
+      `;
+    })
+    .join("");
+};
+
 const renderMatches = () => {
   const container = document.querySelector("#matchGrid");
-  const activeDay = currentMatchDay();
+  const targetMatch = currentTargetMatch();
+  const activeDay = targetMatch?.day;
   const matchesByDay = appData.matches.reduce((days, match) => {
     days[match.day] = days[match.day] || [];
     days[match.day].push(match);
@@ -183,7 +264,7 @@ const renderMatches = () => {
           const initialActive = selectedMatchId === null && dayIndex === 0 && matchIndex === 0;
 
           return `
-            <article class="match-card${active || initialActive ? " active" : ""}" data-match-id="${match.id}">
+            <article class="match-card${active || initialActive ? " active" : ""}" data-match-id="${match.id}" data-current-match="${match.id === targetMatch?.id}">
               <div class="chance-pill ${isFinished(match) ? "real" : ""}">${score.chance}</div>
               <div class="match-group">${match.group}</div>
               <div class="team-line">
@@ -342,6 +423,7 @@ const renderPlayerHighlights = (team) => {
 
 const renderApp = () => {
   renderWeights();
+  renderGroups();
   renderMatches();
   renderDetails();
 };
@@ -362,7 +444,7 @@ const loadBackendData = async () => {
     selectedMatchId = data.matches[0]?.id ?? null;
     renderApp();
     setDataStatus("Dados atualizados.", "ok");
-    requestAnimationFrame(scrollToCurrentDay);
+    requestAnimationFrame(scrollToCurrentMatch);
   } catch (error) {
     appData = fallbackData;
     selectedMatchId = fallbackData.matches[0]?.id ?? null;
@@ -375,8 +457,10 @@ document.querySelectorAll("[data-screen-target]").forEach((button) => {
   button.addEventListener("click", () => {
     showScreen(button.dataset.screenTarget);
     if (button.dataset.screenTarget === "matches") {
-      requestAnimationFrame(scrollToCurrentDay);
+      requestAnimationFrame(scrollToCurrentMatch);
     } else if (button.dataset.screenTarget === "weights") {
+      requestAnimationFrame(scrollToTop);
+    } else if (button.dataset.screenTarget === "groups") {
       requestAnimationFrame(scrollToTop);
     }
   });

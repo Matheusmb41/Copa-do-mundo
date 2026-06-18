@@ -77,7 +77,8 @@ body {
 }
 
 .summary-panel,
-.details-panel {
+.details-panel,
+.groups-panel {
   max-width: 1060px;
   margin: 0 auto;
   padding: 24px;
@@ -85,9 +86,70 @@ body {
 }
 
 .summary-panel h2,
-.details-panel h2 {
+.details-panel h2,
+.groups-panel h2 {
   margin: 0 0 14px;
   font-size: 15px;
+}
+
+.groups-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+  gap: 14px;
+}
+
+.group-card {
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+}
+
+.group-card h3 {
+  margin: 0;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--line);
+  font-size: 14px;
+}
+
+.group-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.group-table th,
+.group-table td {
+  padding: 9px 8px;
+  border-bottom: 1px solid var(--line);
+  text-align: center;
+}
+
+.group-table th:first-child,
+.group-table td:first-child {
+  text-align: left;
+}
+
+.group-table th {
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.group-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.team-cell {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 170px;
+}
+
+.standing-position {
+  width: 18px;
+  color: var(--muted);
+  text-align: right;
 }
 
 .team-weights {
@@ -220,6 +282,7 @@ body {
   position: relative;
   min-width: 0;
   min-height: 150px;
+  scroll-margin-top: 56px;
   padding: 18px 24px;
   border-right: 1px solid var(--line);
   border-bottom: 1px solid var(--line);
@@ -418,7 +481,8 @@ body {
 
 @media (max-width: 1100px) {
   .summary-panel,
-  .details-panel {
+  .details-panel,
+  .groups-panel {
     border: 0;
     border-bottom: 1px solid var(--line);
   }
@@ -441,6 +505,14 @@ body {
 
   .day-match-grid {
     grid-template-columns: 1fr;
+  }
+
+  .groups-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .group-card {
+    overflow-x: auto;
   }
 
   .section-title {

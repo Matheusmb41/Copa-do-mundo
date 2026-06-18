@@ -10,10 +10,16 @@
     <main class="app-shell">
       <nav class="screen-menu" aria-label="Navegacao principal">
         <button class="menu-button active" type="button" data-screen-target="matches">Fase de grupos</button>
+        <button class="menu-button" type="button" data-screen-target="groups">Grupos</button>
         <button class="menu-button" type="button" data-screen-target="weights">Ranking dos times</button>
       </nav>
 
       <section class="scoreboard">
+        <section class="screen-view groups-panel" data-screen="groups">
+          <h2>Classificacao dos grupos</h2>
+          <div id="groupsGrid" class="groups-grid"></div>
+        </section>
+
         <aside class="screen-view summary-panel" data-screen="weights">
           <h2>Ranking dos times</h2>
           <div id="teamWeights" class="team-weights"></div>

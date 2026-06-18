@@ -2,3 +2,4 @@
 node_modules/
 *.log
 .tools/
+data/prediction-history.json

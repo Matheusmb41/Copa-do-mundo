@@ -3,6 +3,8 @@ const fs = require("fs");
 const path = require("path");
 
 const ROOT = __dirname;
+const DATA_DIR = path.join(ROOT, "data");
+const HISTORY_FILE = path.join(DATA_DIR, "prediction-history.json");
 const API_BASE_URL = "https://v3.football.api-sports.io";
 const ESPN_BASE_URL = "https://site.api.espn.com/apis/site/v2/sports/soccer/fifa.world";
 const PORT = Number(process.env.PORT || 3000);
@@ -16,6 +18,8 @@ let cache = {
   expiresAt: 0,
   data: null,
 };
+
+let predictionHistory = loadPredictionHistory();
 
 const fifaRankingSeed = {
   argentina: 1,
@@ -474,6 +478,9 @@ async function buildEspnWorldCupPayload() {
     .slice()
     .sort((a, b) => new Date(a.date) - new Date(b.date))
     .map((event) => convertEspnEvent(event, teams));
+  const groups = buildGroupStandings(matches, teams);
+
+  updatePredictionHistory(matches, teams);
 
   return {
     source: "espn-public",
@@ -481,6 +488,7 @@ async function buildEspnWorldCupPayload() {
     updatedAt: new Date().toISOString(),
     teams,
     matches,
+    groups,
   };
 }
 
@@ -808,6 +816,91 @@ function convertEspnEvent(event, teams) {
   return match;
 }
 
+function buildGroupStandings(matches, teams) {
+  const groups = {};
+
+  matches.forEach((match) => {
+    const groupName = extractGroupName(match.group);
+    if (!groupName) return;
+
+    groups[groupName] = groups[groupName] || {};
+    ensureStandingTeam(groups[groupName], match.home, teams[match.home]);
+    ensureStandingTeam(groups[groupName], match.away, teams[match.away]);
+
+    if (!isFinished(match.status) || !match.actualScore) return;
+
+    applyStandingResult(groups[groupName][match.home], groups[groupName][match.away], match.actualScore.home, match.actualScore.away);
+  });
+
+  return Object.entries(groups)
+    .sort(([a], [b]) => a.localeCompare(b, "pt-BR"))
+    .map(([name, table]) => ({
+      name,
+      teams: Object.values(table)
+        .sort(sortStandingRows)
+        .map((row, index) => ({ ...row, position: index + 1 })),
+    }));
+}
+
+function extractGroupName(groupText) {
+  const match = /Group\s+([A-Z])/i.exec(groupText || "");
+  if (!match) return null;
+  return `Grupo ${match[1].toUpperCase()}`;
+}
+
+function ensureStandingTeam(groupTable, teamKey, team) {
+  if (groupTable[teamKey]) return;
+
+  groupTable[teamKey] = {
+    teamKey,
+    name: team?.name || "Selecao",
+    logo: team?.logo || "",
+    played: 0,
+    wins: 0,
+    draws: 0,
+    losses: 0,
+    goalsFor: 0,
+    goalsAgainst: 0,
+    goalDifference: 0,
+    points: 0,
+  };
+}
+
+function applyStandingResult(home, away, homeScore, awayScore) {
+  home.played += 1;
+  away.played += 1;
+  home.goalsFor += homeScore;
+  home.goalsAgainst += awayScore;
+  away.goalsFor += awayScore;
+  away.goalsAgainst += homeScore;
+  home.goalDifference = home.goalsFor - home.goalsAgainst;
+  away.goalDifference = away.goalsFor - away.goalsAgainst;
+
+  if (homeScore > awayScore) {
+    home.wins += 1;
+    away.losses += 1;
+    home.points += 3;
+  } else if (awayScore > homeScore) {
+    away.wins += 1;
+    home.losses += 1;
+    away.points += 3;
+  } else {
+    home.draws += 1;
+    away.draws += 1;
+    home.points += 1;
+    away.points += 1;
+  }
+}
+
+function sortStandingRows(a, b) {
+  return (
+    b.points - a.points ||
+    b.goalDifference - a.goalDifference ||
+    b.goalsFor - a.goalsFor ||
+    a.name.localeCompare(b.name, "pt-BR")
+  );
+}
+
 function publicStats(statistics = []) {
   const stats = statsObject(statistics);
   return {
@@ -816,6 +909,175 @@ function publicStats(statistics = []) {
     possession: numberStat(stats.possessionPct),
     corners: numberStat(stats.wonCorners),
     fouls: numberStat(stats.foulsCommitted),
+  };
+}
+
+function loadPredictionHistory() {
+  try {
+    if (!fs.existsSync(DATA_DIR)) {
+      fs.mkdirSync(DATA_DIR, { recursive: true });
+    }
+
+    if (!fs.existsSync(HISTORY_FILE)) {
+      return { version: 1, matches: {} };
+    }
+
+    return JSON.parse(fs.readFileSync(HISTORY_FILE, "utf8"));
+  } catch (error) {
+    return { version: 1, matches: {} };
+  }
+}
+
+function savePredictionHistory() {
+  if (!fs.existsSync(DATA_DIR)) {
+    fs.mkdirSync(DATA_DIR, { recursive: true });
+  }
+
+  fs.writeFileSync(HISTORY_FILE, JSON.stringify(predictionHistory, null, 2));
+}
+
+function updatePredictionHistory(matches, teams) {
+  let changed = false;
+
+  matches.forEach((match) => {
+    const key = String(match.id);
+    const existing = predictionHistory.matches[key];
+
+    if (!isFinished(match.status) && match.prediction) {
+      if (!existing) {
+        predictionHistory.matches[key] = createPredictionRecord(match, teams);
+        changed = true;
+      } else if (!existing.result) {
+        existing.latestPrediction = snapshotPrediction(match, teams);
+        existing.updatedAt = new Date().toISOString();
+        changed = true;
+      }
+      return;
+    }
+
+    if (isFinished(match.status) && match.actualScore) {
+      if (!existing) {
+        predictionHistory.matches[key] = createResultOnlyRecord(match, teams);
+        changed = true;
+      } else if (!existing.result) {
+        existing.result = snapshotResult(match, teams);
+        existing.evaluation = evaluatePrediction(existing.initialPrediction, match.actualScore);
+        existing.completedAt = new Date().toISOString();
+        changed = true;
+      }
+    }
+  });
+
+  if (changed) {
+    savePredictionHistory();
+  }
+}
+
+function createPredictionRecord(match, teams) {
+  return {
+    id: match.id,
+    group: match.group,
+    date: match.timestamp,
+    home: teams[match.home]?.name,
+    away: teams[match.away]?.name,
+    initialPrediction: snapshotPrediction(match, teams),
+    latestPrediction: snapshotPrediction(match, teams),
+    result: null,
+    evaluation: null,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  };
+}
+
+function createResultOnlyRecord(match, teams) {
+  return {
+    id: match.id,
+    group: match.group,
+    date: match.timestamp,
+    home: teams[match.home]?.name,
+    away: teams[match.away]?.name,
+    initialPrediction: null,
+    latestPrediction: null,
+    result: snapshotResult(match, teams),
+    evaluation: null,
+    createdAt: new Date().toISOString(),
+    completedAt: new Date().toISOString(),
+  };
+}
+
+function snapshotPrediction(match, teams) {
+  return {
+    home: teams[match.home]?.name,
+    away: teams[match.away]?.name,
+    homeGoals: match.prediction.homeGoals,
+    awayGoals: match.prediction.awayGoals,
+    homeChance: match.prediction.homeChance,
+    drawChance: match.prediction.drawChance,
+    awayChance: match.prediction.awayChance,
+    favoriteChance: match.prediction.favoriteChance,
+    winner: resultDirection(match.prediction.homeGoals, match.prediction.awayGoals),
+    capturedAt: new Date().toISOString(),
+  };
+}
+
+function snapshotResult(match, teams) {
+  return {
+    home: teams[match.home]?.name,
+    away: teams[match.away]?.name,
+    homeGoals: match.actualScore.home,
+    awayGoals: match.actualScore.away,
+    winner: resultDirection(match.actualScore.home, match.actualScore.away),
+  };
+}
+
+function resultDirection(homeGoals, awayGoals) {
+  if (homeGoals > awayGoals) return "home";
+  if (awayGoals > homeGoals) return "away";
+  return "draw";
+}
+
+function evaluatePrediction(prediction, actualScore) {
+  if (!prediction) return null;
+
+  const actualWinner = resultDirection(actualScore.home, actualScore.away);
+  const predictedWinner = resultDirection(prediction.homeGoals, prediction.awayGoals);
+
+  return {
+    exactScore: prediction.homeGoals === actualScore.home && prediction.awayGoals === actualScore.away,
+    winner: predictedWinner === actualWinner && actualWinner !== "draw",
+    draw: predictedWinner === "draw" && actualWinner === "draw",
+    loser:
+      predictedWinner === actualWinner &&
+      actualWinner !== "draw" &&
+      resultDirection(prediction.awayGoals, prediction.homeGoals) === resultDirection(actualScore.away, actualScore.home),
+    direction: predictedWinner === actualWinner,
+  };
+}
+
+function getPredictionHistorySummary() {
+  const records = Object.values(predictionHistory.matches);
+  const evaluated = records.filter((record) => record.evaluation);
+  const awaitingResult = records.filter((record) => record.initialPrediction && !record.result);
+  const resultWithoutPrediction = records.filter((record) => !record.initialPrediction && record.result);
+
+  const summary = evaluated.reduce(
+    (acc, record) => {
+      acc.exactScore += record.evaluation.exactScore ? 1 : 0;
+      acc.winner += record.evaluation.winner ? 1 : 0;
+      acc.draw += record.evaluation.draw ? 1 : 0;
+      acc.direction += record.evaluation.direction ? 1 : 0;
+      return acc;
+    },
+    { exactScore: 0, winner: 0, draw: 0, direction: 0 }
+  );
+
+  return {
+    total: records.length,
+    evaluated: evaluated.length,
+    awaitingResult: awaitingResult.length,
+    resultWithoutPrediction: resultWithoutPrediction.length,
+    summary,
+    matches: records.sort((a, b) => (a.date || 0) - (b.date || 0)),
   };
 }
 
@@ -880,6 +1142,11 @@ const server = http.createServer(async (req, res) => {
         message: error.message || "Falha ao carregar dados da Copa.",
       });
     }
+    return;
+  }
+
+  if (url.pathname === "/api/prediction-history") {
+    sendJson(res, 200, getPredictionHistorySummary());
     return;
   }
 
