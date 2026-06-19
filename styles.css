@@ -101,12 +101,16 @@ body.modal-open {
   font-size: 15px;
 }
 
+.prediction-stats {
+  display: grid;
+  gap: 14px;
+}
+
 .stats-overview,
 .accuracy-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   gap: 12px;
-  margin-bottom: 14px;
 }
 
 .stat-card,
@@ -155,11 +159,19 @@ body.modal-open {
   grid-template-columns: 1fr auto auto auto;
   gap: 10px;
   align-items: center;
+  min-width: 0;
   padding: 10px;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: #1a1d23;
   font-size: 12px;
+}
+
+.history-row span,
+.history-row strong,
+.history-row small {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .history-row span,

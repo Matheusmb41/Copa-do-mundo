@@ -127,6 +127,41 @@ const sameCalendarDay = (a, b) =>
   a.getMonth() === b.getMonth() &&
   a.getDate() === b.getDate();
 
+const matchDate = (match) => (match?.timestamp ? new Date(match.timestamp * 1000) : null);
+
+const matchDisplayDay = (match) => {
+  const date = matchDate(match);
+  if (!date) return match.day || "";
+
+  const today = new Date();
+  const tomorrow = new Date(today);
+  tomorrow.setDate(today.getDate() + 1);
+
+  if (sameCalendarDay(date, today)) return "Hoje";
+  if (sameCalendarDay(date, tomorrow)) return "Amanha";
+
+  return new Intl.DateTimeFormat("pt-BR", {
+    weekday: "short",
+    day: "2-digit",
+    month: "2-digit",
+  })
+    .format(date)
+    .replace(".", "");
+};
+
+const matchDisplayTime = (match) => {
+  if (isFinished(match)) return "Finalizado";
+  if (isLive(match)) return "Ao vivo";
+
+  const date = matchDate(match);
+  if (!date) return match.time || "";
+
+  return new Intl.DateTimeFormat("pt-BR", {
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(date);
+};
+
 const currentTargetMatch = () => {
   const datedMatches = appData.matches.filter((match) => match.timestamp && isGroupStageMatch(match));
   if (!datedMatches.length) return appData.matches[0];
@@ -417,7 +452,6 @@ const renderPredictionStats = () => {
       ${accuracyCard("Vencedor", summary.winner, evaluated)}
       ${accuracyCard("Empate", summary.draw, evaluated)}
     </section>
-    ${renderCalibration(predictionHistory.calibration)}
     <section class="details-card">
       <h3>Ultimas avaliacoes</h3>
       ${evaluatedMatches.length ? renderEvaluatedMatches(evaluatedMatches) : "<p>Nenhum jogo com premonicao anterior foi finalizado ainda.</p>"}
@@ -426,6 +460,7 @@ const renderPredictionStats = () => {
       <h3>Jogos acompanhados</h3>
       ${trackedMatches.length ? renderTrackedMatches(trackedMatches) : "<p>Nenhum jogo foi guardado no historico ainda.</p>"}
     </section>
+    ${renderCalibration(predictionHistory.calibration)}
   `;
 };
 
@@ -522,7 +557,7 @@ const renderTrackedMatches = (matches) => `
 const renderMatches = () => {
   const container = document.querySelector("#matchGrid");
   const targetMatch = currentTargetMatch();
-  const activeDay = targetMatch?.day;
+  const activeDay = targetMatch ? matchDisplayDay(targetMatch) : null;
   const visibleMatches = appData.matches.filter(isGroupStageMatch);
   const activeMatchId = selectedMatchId ?? targetMatch?.id ?? visibleMatches[0]?.id;
 
@@ -537,8 +572,9 @@ const renderMatches = () => {
   }
 
   const matchesByDay = visibleMatches.reduce((days, match) => {
-    days[match.day] = days[match.day] || [];
-    days[match.day].push(match);
+    const day = matchDisplayDay(match);
+    days[day] = days[day] || [];
+    days[day].push(match);
     return days;
   }, {});
 
@@ -570,7 +606,7 @@ const renderMatches = () => {
                 <span class="predicted-score">${score.away}</span>
               </div>
               <footer class="match-footer">
-                <span>${isFinished(match) ? "Finalizado" : `${match.time} - ${score.label}`}</span>
+                <span>${isFinished(match) ? "Finalizado" : `${matchDisplayTime(match)} - ${score.label}`}</span>
                 <span class="confidence-bar" title="Confianca da premonicao">
                   <span style="width: ${match.prediction?.confidence ?? 100}%"></span>
                 </span>
@@ -733,7 +769,7 @@ const renderBracketMatch = (match, side = "") => {
         <span>${away.name}</span>
         <strong>${score.away}</strong>
       </div>
-      <small>${match.day} - ${isFinished(match) ? "Finalizado" : match.time}</small>
+      <small>${matchDisplayDay(match)} - ${isFinished(match) ? "Finalizado" : matchDisplayTime(match)}</small>
     </article>
   `;
 };
