@@ -188,3 +188,40 @@ test("erro medio de gols aumenta volume quando o modelo subestima placares", () 
   assert.ok(calibration.averageGoalError > 1);
   assert.ok(calibration.goalBias < 0);
 });
+
+test("seed preenche avaliacao quando ambiente tem historico sem avaliados", () => {
+  const merged = _test.mergePredictionHistories(
+    {
+      version: 1,
+      matches: {
+        "1": {
+          id: 1,
+          initialPrediction: { homeGoals: 2, awayGoals: 1, winner: "home" },
+          result: { homeGoals: 1, awayGoals: 1, winner: "draw" },
+          evaluation: { direction: false, exactScore: false },
+        },
+      },
+    },
+    {
+      version: 1,
+      matches: {
+        "1": {
+          id: 1,
+          initialPrediction: null,
+          result: { homeGoals: 1, awayGoals: 1, winner: "draw" },
+          evaluation: null,
+        },
+        "2": {
+          id: 2,
+          initialPrediction: { homeGoals: 1, awayGoals: 0, winner: "home" },
+          result: null,
+          evaluation: null,
+        },
+      },
+    }
+  );
+
+  assert.equal(merged.matches["1"].evaluation.direction, false);
+  assert.equal(merged.matches["1"].initialPrediction.homeGoals, 2);
+  assert.equal(merged.matches["2"].initialPrediction.homeGoals, 1);
+});

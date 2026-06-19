@@ -93,7 +93,7 @@ const scoreFor = (match) => {
       home: match.actualScore.home,
       away: match.actualScore.away,
       label: "Placar ao vivo",
-      chance: "Ao vivo",
+      chance: "Placar",
       kind: "live",
     };
   }

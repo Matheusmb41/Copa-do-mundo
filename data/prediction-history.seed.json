@@ -1,0 +1,259 @@
+{
+  "version": 1,
+  "matches": {
+    "760438": {
+      "id": 760438,
+      "group": "FIFA World Cup, Group A",
+      "date": 1781798400,
+      "home": "Tchequia",
+      "away": "Africa do Sul",
+      "initialPrediction": {
+        "home": "Tchequia",
+        "away": "Africa do Sul",
+        "homeGoals": 2,
+        "awayGoals": 1,
+        "homeChance": 47,
+        "drawChance": 23,
+        "awayChance": 30,
+        "favoriteChance": 47,
+        "winner": "home",
+        "capturedAt": "2026-06-18T16:18:20.367Z"
+      },
+      "latestPrediction": {
+        "home": "Tchequia",
+        "away": "Africa do Sul",
+        "homeGoals": 2,
+        "awayGoals": 1,
+        "homeChance": 47,
+        "drawChance": 23,
+        "awayChance": 30,
+        "favoriteChance": 47,
+        "winner": "home",
+        "capturedAt": "2026-06-18T17:05:27.424Z"
+      },
+      "result": {
+        "home": "Tchequia",
+        "away": "Africa do Sul",
+        "homeGoals": 1,
+        "awayGoals": 1,
+        "winner": "draw"
+      },
+      "evaluation": {
+        "exactScore": false,
+        "winner": false,
+        "draw": false,
+        "loser": false,
+        "direction": false
+      },
+      "createdAt": "2026-06-18T16:18:20.367Z",
+      "updatedAt": "2026-06-18T17:05:27.424Z",
+      "completedAt": "2026-06-18T18:19:14.077Z"
+    },
+    "760439": {
+      "id": 760439,
+      "group": "FIFA World Cup, Group B",
+      "date": 1781809200,
+      "home": "Suica",
+      "away": "Bosnia e Herzegovina",
+      "initialPrediction": {
+        "home": "Suica",
+        "away": "Bosnia e Herzegovina",
+        "homeGoals": 2,
+        "awayGoals": 0,
+        "homeChance": 60,
+        "drawChance": 18,
+        "awayChance": 22,
+        "favoriteChance": 60,
+        "winner": "home",
+        "capturedAt": "2026-06-18T16:18:20.367Z"
+      },
+      "latestPrediction": {
+        "home": "Suica",
+        "away": "Bosnia e Herzegovina",
+        "homeGoals": 2,
+        "awayGoals": 0,
+        "homeChance": 58,
+        "drawChance": 20,
+        "awayChance": 22,
+        "favoriteChance": 58,
+        "winner": "home",
+        "capturedAt": "2026-06-18T20:39:27.191Z"
+      },
+      "result": {
+        "home": "Suica",
+        "away": "Bosnia e Herzegovina",
+        "homeGoals": 4,
+        "awayGoals": 1,
+        "winner": "home"
+      },
+      "evaluation": {
+        "exactScore": false,
+        "winner": true,
+        "draw": false,
+        "loser": true,
+        "direction": true
+      },
+      "createdAt": "2026-06-18T16:18:20.367Z",
+      "updatedAt": "2026-06-18T20:39:27.191Z",
+      "completedAt": "2026-06-18T23:56:10.454Z"
+    },
+    "760440": {
+      "id": 760440,
+      "group": "FIFA World Cup, Group B",
+      "date": 1781820000,
+      "home": "Canada",
+      "away": "Catar",
+      "initialPrediction": {
+        "home": "Canada",
+        "away": "Catar",
+        "homeGoals": 2,
+        "awayGoals": 1,
+        "homeChance": 40,
+        "drawChance": 26,
+        "awayChance": 35,
+        "favoriteChance": 40,
+        "winner": "home",
+        "capturedAt": "2026-06-18T16:18:20.367Z"
+      },
+      "latestPrediction": {
+        "home": "Canada",
+        "away": "Catar",
+        "homeGoals": 2,
+        "awayGoals": 1,
+        "homeChance": 39,
+        "drawChance": 27,
+        "awayChance": 34,
+        "favoriteChance": 39,
+        "winner": "home",
+        "capturedAt": "2026-06-18T23:56:10.454Z"
+      },
+      "result": {
+        "home": "Canada",
+        "away": "Catar",
+        "homeGoals": 6,
+        "awayGoals": 0,
+        "winner": "home"
+      },
+      "evaluation": {
+        "exactScore": false,
+        "winner": true,
+        "draw": false,
+        "loser": true,
+        "direction": true
+      },
+      "createdAt": "2026-06-18T16:18:20.367Z",
+      "updatedAt": "2026-06-18T23:56:10.454Z",
+      "completedAt": "2026-06-19T00:06:33.074Z"
+    },
+    "760441": {
+      "id": 760441,
+      "group": "FIFA World Cup, Group A",
+      "date": 1781830800,
+      "home": "Mexico",
+      "away": "Coreia do Sul",
+      "initialPrediction": {
+        "home": "Mexico",
+        "away": "Coreia do Sul",
+        "homeGoals": 2,
+        "awayGoals": 1,
+        "homeChance": 45,
+        "drawChance": 24,
+        "awayChance": 32,
+        "favoriteChance": 45,
+        "winner": "home",
+        "capturedAt": "2026-06-18T16:18:20.367Z"
+      },
+      "latestPrediction": {
+        "home": "Mexico",
+        "away": "Coreia do Sul",
+        "homeGoals": 2,
+        "awayGoals": 1,
+        "expectedGoals": {
+          "home": 1.55,
+          "away": 0.84
+        },
+        "homeChance": 48,
+        "drawChance": 23,
+        "awayChance": 29,
+        "favoriteChance": 48,
+        "winner": "home",
+        "capturedAt": "2026-06-19T00:49:30.772Z"
+      },
+      "result": {
+        "home": "Mexico",
+        "away": "Coreia do Sul",
+        "homeGoals": 1,
+        "awayGoals": 0,
+        "winner": "home"
+      },
+      "evaluation": {
+        "exactScore": false,
+        "winner": true,
+        "draw": false,
+        "loser": true,
+        "direction": true
+      },
+      "createdAt": "2026-06-18T16:18:20.367Z",
+      "updatedAt": "2026-06-19T00:49:30.772Z",
+      "completedAt": "2026-06-19T07:16:32.333Z"
+    },
+    "760442": {
+      "id": 760442,
+      "group": "FIFA World Cup, Group D",
+      "date": 1781895600,
+      "home": "Estados Unidos",
+      "away": "Australia",
+      "initialPrediction": {
+        "home": "Estados Unidos",
+        "away": "Australia",
+        "homeGoals": 3,
+        "awayGoals": 0,
+        "homeChance": 64,
+        "drawChance": 16,
+        "awayChance": 19,
+        "favoriteChance": 64,
+        "winner": "home",
+        "capturedAt": "2026-06-18T16:18:20.367Z"
+      },
+      "latestPrediction": {
+        "home": "Estados Unidos",
+        "away": "Australia",
+        "homeGoals": 2,
+        "awayGoals": 1,
+        "expectedGoals": {
+          "home": 1.66,
+          "away": 0.79
+        },
+        "homeChance": 51,
+        "drawChance": 22,
+        "awayChance": 27,
+        "favoriteChance": 51,
+        "winner": "home",
+        "capturedAt": "2026-06-19T20:22:13.007Z"
+      },
+      "result": {
+        "home": "Estados Unidos",
+        "away": "Australia",
+        "homeGoals": 2,
+        "awayGoals": 0,
+        "winner": "home"
+      },
+      "evaluation": {
+        "exactScore": false,
+        "winner": true,
+        "draw": false,
+        "loser": true,
+        "direction": true,
+        "homeGoalError": 1,
+        "awayGoalError": 0,
+        "totalGoalError": 1,
+        "totalGoalsError": 1,
+        "expectedGoalError": null,
+        "favoriteChance": 64
+      },
+      "createdAt": "2026-06-18T16:18:20.367Z",
+      "updatedAt": "2026-06-19T20:22:13.007Z",
+      "completedAt": "2026-06-19T21:11:46.202Z"
+    }
+  }
+}

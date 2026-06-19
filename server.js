@@ -7,6 +7,7 @@ const DATA_DIR = path.join(ROOT, "data");
 loadEnvFile();
 
 const HISTORY_FILE = path.join(DATA_DIR, "prediction-history.json");
+const HISTORY_SEED_FILE = path.join(DATA_DIR, "prediction-history.seed.json");
 const SUMMARY_CACHE_FILE = path.join(DATA_DIR, "espn-summary-cache.json");
 const API_BASE_URL = "https://v3.football.api-sports.io";
 const ESPN_BASE_URL = "https://site.api.espn.com/apis/site/v2/sports/soccer/fifa.world";
@@ -264,15 +265,16 @@ function createFilePredictionHistoryStore() {
   return {
     name: "json-file",
     async load() {
+      const seed = loadPredictionHistorySeed();
       if (!fs.existsSync(HISTORY_FILE)) {
-        return createEmptyPredictionHistory();
+        return seed;
       }
 
       try {
         const parsed = JSON.parse(fs.readFileSync(HISTORY_FILE, "utf8"));
-        return normalizePredictionHistory(parsed);
+        return mergePredictionHistories(seed, normalizePredictionHistory(parsed));
       } catch (error) {
-        return createEmptyPredictionHistory();
+        return seed;
       }
     },
     async save(history) {
@@ -317,7 +319,7 @@ function createPostgresPredictionHistoryStore() {
         history.matches[row.id] = row.record;
       });
 
-      return normalizePredictionHistory(history);
+      return mergePredictionHistories(loadPredictionHistorySeed(), normalizePredictionHistory(history));
     },
     async save(history) {
       const normalized = normalizePredictionHistory(history);
@@ -355,6 +357,54 @@ function normalizePredictionHistory(history) {
     version: history?.version || 1,
     matches: history?.matches && typeof history.matches === "object" ? history.matches : {},
   };
+}
+
+function loadPredictionHistorySeed() {
+  if (!fs.existsSync(HISTORY_SEED_FILE)) {
+    return createEmptyPredictionHistory();
+  }
+
+  try {
+    const parsed = JSON.parse(fs.readFileSync(HISTORY_SEED_FILE, "utf8"));
+    return normalizePredictionHistory(parsed);
+  } catch (error) {
+    return createEmptyPredictionHistory();
+  }
+}
+
+function mergePredictionHistories(seedHistory, storedHistory) {
+  const seed = normalizePredictionHistory(seedHistory);
+  const stored = normalizePredictionHistory(storedHistory);
+  const merged = {
+    version: Math.max(seed.version || 1, stored.version || 1),
+    matches: { ...seed.matches },
+  };
+
+  Object.entries(stored.matches).forEach(([id, storedRecord]) => {
+    const seedRecord = seed.matches[id];
+    merged.matches[id] = mergePredictionRecord(seedRecord, storedRecord);
+  });
+
+  return merged;
+}
+
+function mergePredictionRecord(seedRecord, storedRecord) {
+  if (!seedRecord) return storedRecord;
+  if (!storedRecord) return seedRecord;
+
+  const seedEvaluated = Boolean(seedRecord.initialPrediction && seedRecord.result && seedRecord.evaluation);
+  const storedEvaluated = Boolean(storedRecord.initialPrediction && storedRecord.result && storedRecord.evaluation);
+
+  if (storedEvaluated) return storedRecord;
+  if (seedEvaluated) {
+    return {
+      ...storedRecord,
+      ...seedRecord,
+      latestPrediction: storedRecord.latestPrediction || seedRecord.latestPrediction,
+    };
+  }
+
+  return storedRecord;
 }
 
 async function initializePersistence() {
@@ -2038,5 +2088,6 @@ module.exports = {
       predictionHistoryStore = store;
     },
     updatePredictionHistory,
+    mergePredictionHistories,
   },
 };
