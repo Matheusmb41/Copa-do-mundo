@@ -1,5 +1,6 @@
 let appData = null;
 let selectedMatchId = null;
+let selectedTeamKey = null;
 let predictionHistory = null;
 let gamesView = "groups";
 
@@ -72,6 +73,10 @@ const fallbackData = {
 };
 
 const teamMark = (team) => {
+  if (team?.flagCode) {
+    return `<img class="team-logo flag-logo" src="https://flagcdn.com/w40/${team.flagCode}.png" alt="" />`;
+  }
+
   if (team?.logo) {
     return `<img class="team-logo" src="${team.logo}" alt="" />`;
   }
@@ -168,8 +173,9 @@ const endpointFor = (path) => {
 
 const renderWeights = () => {
   const container = document.querySelector("#teamWeights");
-  const teams = Object.values(appData.teams)
-    .filter((team) => !team.placeholder)
+  const teams = Object.entries(appData.teams)
+    .filter(([, team]) => !team.placeholder)
+    .map(([key, team]) => ({ key, ...team }))
     .sort((a, b) => b.weight - a.weight);
 
   const midpoint = Math.ceil(teams.length / 2);
@@ -180,8 +186,9 @@ const renderWeights = () => {
       const columnRows = column
         .map((team, index) => {
           const rank = columnIndex === 0 ? index + 1 : midpoint + index + 1;
+          const selected = selectedTeamKey === team.key;
           return `
-            <article class="weight-row">
+            <article class="weight-row${selected ? " selected" : ""}" data-team-key="${team.key}" role="button" tabindex="0">
               <div class="weight-rank">
                 <span>${rank}</span>
                 ${rankingMovement(team)}
@@ -191,7 +198,7 @@ const renderWeights = () => {
                 <strong>${team.name}</strong>
               </div>
               <span class="weight-value">${team.weight.toFixed(1)}</span>
-              <div class="weight-meta">Ranking FIFA #${team.fifaRank} - forma ${team.form >= 0 ? "+" : ""}${team.form} - peso ${team.weightDelta > 0 ? "+" : ""}${Number(team.weightDelta || 0).toFixed(1)}</div>
+              <div class="weight-meta">Ranking FIFA #${team.fifaRank} - base ${formatMetaNumber(team.strength?.base)} - amostra ${Math.round((team.strength?.sampleConfidence || 0) * 100)}% - peso ${team.weightDelta > 0 ? "+" : ""}${Number(team.weightDelta || 0).toFixed(1)}</div>
             </article>
           `;
         })
@@ -203,8 +210,90 @@ const renderWeights = () => {
     })
     .join("");
 
-  container.innerHTML = rows;
+  container.innerHTML = `
+    ${rows}
+  `;
+
+  document.querySelectorAll(".weight-row[data-team-key]").forEach((row) => {
+    const selectTeam = () => {
+      selectedTeamKey = row.dataset.teamKey;
+      renderWeights();
+      openTeamPlayersModal(appData.teams[selectedTeamKey]);
+    };
+
+    row.addEventListener("click", selectTeam);
+    row.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        selectTeam();
+      }
+    });
+  });
 };
+
+const teamPlayersContent = (team) => {
+  if (!team) return "";
+  const players = team.players || [];
+
+  if (!players.length) {
+    return `
+      <section class="team-player-panel">
+        <header>
+          <h3 id="teamPlayersTitle">Jogadores - ${team.name}</h3>
+          <span>Sem estatisticas individuais suficientes ainda</span>
+        </header>
+        <p>Assim que a fonte devolver dados individuais dessa selecao, a media dos jogadores aparece aqui.</p>
+      </section>
+    `;
+  }
+
+  return `
+    <section class="team-player-panel">
+      <header>
+        <h3 id="teamPlayersTitle">Jogadores - ${team.name}</h3>
+        <span>Media por jogo e total acumulado</span>
+      </header>
+      <div class="player-score-list">
+        ${players
+          .map(
+            (player, index) => `
+              <article class="player-score-row">
+                <strong>${index + 1}. ${player.name}</strong>
+                <span>${player.games || 0} jogo${player.games === 1 ? "" : "s"}</span>
+                <span>G ${player.goals || 0} / A ${player.assists || 0}</span>
+                <span>Media ${Number(player.average || 0).toFixed(2)}</span>
+                <span>Total ${Number(player.total || 0).toFixed(2)}</span>
+              </article>
+            `
+          )
+          .join("")}
+      </div>
+    </section>
+  `;
+};
+
+const openTeamPlayersModal = (team) => {
+  const modal = document.querySelector("#teamPlayersModal");
+  const content = document.querySelector("#teamPlayersContent");
+  if (!modal || !content) return;
+
+  content.innerHTML = teamPlayersContent(team);
+  modal.classList.add("active");
+  modal.setAttribute("aria-hidden", "false");
+  document.body.classList.add("modal-open");
+  modal.querySelector("[data-close-team-modal]")?.focus();
+};
+
+const closeTeamPlayersModal = () => {
+  const modal = document.querySelector("#teamPlayersModal");
+  if (!modal) return;
+
+  modal.classList.remove("active");
+  modal.setAttribute("aria-hidden", "true");
+  document.body.classList.remove("modal-open");
+};
+
+const formatMetaNumber = (value) => (Number.isFinite(Number(value)) ? Number(value).toFixed(1) : "-");
 
 const rankingMovement = (team) => {
   const weightDelta = Number(team.weightDelta || 0);
@@ -247,7 +336,7 @@ const renderGroups = () => {
           <tr>
             <td class="team-cell">
               <span class="standing-position">${team.position}</span>
-              ${team.logo ? `<img class="team-logo" src="${team.logo}" alt="" />` : ""}
+              ${teamMark(team)}
               <span>${team.name}</span>
             </td>
             <td>${team.played}</td>
@@ -308,6 +397,11 @@ const renderPredictionStats = () => {
 
   const { total, evaluated, awaitingResult, resultWithoutPrediction, summary, matches } = predictionHistory;
   const evaluatedMatches = (matches || []).filter((match) => match.evaluation).slice(-8).reverse();
+  const trackedMatches = (matches || [])
+    .filter((match) => match.initialPrediction || match.result)
+    .slice()
+    .sort((a, b) => (b.date || 0) - (a.date || 0))
+    .slice(0, 24);
   const wrongDirection = Math.max(0, evaluated - (summary.direction || 0));
 
   container.innerHTML = `
@@ -327,6 +421,10 @@ const renderPredictionStats = () => {
     <section class="details-card">
       <h3>Ultimas avaliacoes</h3>
       ${evaluatedMatches.length ? renderEvaluatedMatches(evaluatedMatches) : "<p>Nenhum jogo com premonicao anterior foi finalizado ainda.</p>"}
+    </section>
+    <section class="details-card">
+      <h3>Jogos acompanhados</h3>
+      ${trackedMatches.length ? renderTrackedMatches(trackedMatches) : "<p>Nenhum jogo foi guardado no historico ainda.</p>"}
     </section>
   `;
 };
@@ -386,6 +484,37 @@ const renderEvaluatedMatches = (matches) => `
           <small class="${match.evaluation.direction ? "hit" : "miss"}">${match.evaluation.exactScore ? "Placar exato" : match.evaluation.direction ? "Direcao correta" : "Errou"}</small>
         </article>
       `)
+      .join("")}
+  </div>
+`;
+
+const renderTrackedMatches = (matches) => `
+  <div class="history-list">
+    ${matches
+      .map((match) => {
+        const prediction = match.latestPrediction || match.initialPrediction;
+        const status = match.result ? "Finalizado" : "Aguardando resultado";
+        const predictionText = prediction ? `${prediction.homeGoals}-${prediction.awayGoals}` : "Sem premonicao salva";
+        const resultText = match.result ? `${match.result.homeGoals}-${match.result.awayGoals}` : "Pendente";
+        const evaluationText = match.evaluation
+          ? match.evaluation.exactScore
+            ? "Placar exato"
+            : match.evaluation.direction
+              ? "Direcao correta"
+              : "Errou"
+          : match.result
+            ? "Resultado importado"
+            : "Aguardando";
+
+        return `
+          <article class="history-row">
+            <strong>${match.home} x ${match.away}</strong>
+            <span>Premonicao: ${predictionText}</span>
+            <span>Placar: ${resultText}</span>
+            <small class="${match.evaluation?.direction || match.evaluation?.exactScore ? "hit" : match.result ? "miss" : ""}">${status} - ${evaluationText}</small>
+          </article>
+        `;
+      })
       .join("")}
   </div>
 `;
@@ -666,6 +795,7 @@ const renderDetails = (matchId) => {
     <article class="details-card">
       <h3>${home.name} ${score.home} x ${score.away} ${away.name}</h3>
       <p>${match.prediction.reason}</p>
+      ${match.prediction.expectedGoals ? `<p><strong>Gols esperados:</strong> ${home.name} ${match.prediction.expectedGoals.home.toFixed(2)} x ${match.prediction.expectedGoals.away.toFixed(2)} ${away.name}</p>` : ""}
     </article>
     ${renderPredictionFactors(home, away)}
     <article class="details-card">
@@ -687,34 +817,57 @@ const renderDetails = (matchId) => {
 };
 
 const renderPredictionFactors = (home, away) => {
+  const homeStrength = home.strength || {};
+  const awayStrength = away.strength || {};
   const factors = [
     {
       label: "Peso atual",
       home: home.weight,
       away: away.weight,
       suffix: "",
-      note: "Ranking + desempenho + jogadores",
+      note: "Forca final usada na premonicao",
+    },
+    {
+      label: "Base FIFA",
+      home: homeStrength.base ?? home.weight,
+      away: awayStrength.base ?? away.weight,
+      suffix: "",
+      note: "Ponto de partida estrutural",
     },
     {
       label: "Forma",
-      home: home.form || 0,
-      away: away.form || 0,
+      home: homeStrength.form ?? home.form ?? 0,
+      away: awayStrength.form ?? away.form ?? 0,
       suffix: "",
-      note: "Pontos, saldo e volume recente",
+      note: "Pontos, saldo e volume ofensivo na Copa",
     },
     {
       label: "Ataque",
-      home: home.attack || 1,
-      away: away.attack || 1,
+      home: homeStrength.attack ?? home.attack ?? 1,
+      away: awayStrength.attack ?? away.attack ?? 1,
       suffix: "",
-      note: "Gols, remates e impacto ofensivo",
+      note: "Gols, remates, xG quando disponivel e jogadores ofensivos",
+    },
+    {
+      label: "Defesa",
+      home: homeStrength.defense ?? home.defense ?? 1,
+      away: awayStrength.defense ?? away.defense ?? 1,
+      suffix: "",
+      note: "Gols sofridos, posse, cortes, desarmes e goleiro",
     },
     {
       label: "Jogadores",
-      home: home.playerImpact || 0,
-      away: away.playerImpact || 0,
+      home: homeStrength.players ?? home.playerImpact ?? 0,
+      away: awayStrength.players ?? away.playerImpact ?? 0,
       suffix: "",
-      note: "Destaques individuais",
+      note: "Media dos principais jogadores e impacto individual",
+    },
+    {
+      label: "Adversarios",
+      home: homeStrength.opponents ?? 0,
+      away: awayStrength.opponents ?? 0,
+      suffix: "",
+      note: "Valor extra por desempenho contra selecoes fortes",
     },
   ];
 
@@ -877,6 +1030,18 @@ document.querySelectorAll("[data-games-view]").forEach((button) => {
       requestAnimationFrame(scrollToTop);
     }
   });
+});
+
+document.querySelector("#teamPlayersModal")?.addEventListener("click", (event) => {
+  if (event.target.id === "teamPlayersModal" || event.target.closest("[data-close-team-modal]")) {
+    closeTeamPlayersModal();
+  }
+});
+
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape") {
+    closeTeamPlayersModal();
+  }
 });
 
 loadBackendData();

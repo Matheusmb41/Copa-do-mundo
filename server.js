@@ -27,6 +27,8 @@ const fifaRankingSeed = {
   brazil: 5,
   brasil: 5,
   portugal: 6,
+  morocco: 6,
+  marrocos: 6,
   england: 4,
   inglaterra: 4,
   netherlands: 7,
@@ -47,6 +49,44 @@ const fifaRankingSeed = {
   switzerland: 19,
   suica: 19,
   mexico: 14,
+  scotland: 43,
+  escocia: 43,
+  haiti: 86,
+  egypt: 31,
+  egito: 31,
+  sweden: 28,
+  suecia: 28,
+  iraq: 59,
+  iraque: 59,
+  jordan: 62,
+  jordania: 62,
+  algeria: 36,
+  argelia: 36,
+  "cape verde": 72,
+  "cabo verde": 72,
+  "ivory coast": 45,
+  "costa do marfim": 45,
+  iran: 20,
+  ira: 20,
+  norway: 33,
+  noruega: 33,
+  australia: 24,
+  austria: 22,
+  paraguay: 46,
+  paraguai: 46,
+  turkey: 27,
+  turkiye: 27,
+  türkiye: 27,
+  tunisia: 41,
+  tunisia: 41,
+  "saudi arabia": 54,
+  "arabia saudita": 54,
+  ecuador: 25,
+  equador: 25,
+  japan: 18,
+  japao: 18,
+  "new zealand": 89,
+  "nova zelandia": 89,
   "south korea": 23,
   "coreia do sul": 23,
   panama: 35,
@@ -70,6 +110,96 @@ const fifaRankingSeed = {
   "estados unidos": 15,
 };
 
+const fifaRankingOverrides = {
+  france: 1,
+  franca: 1,
+  spain: 2,
+  espanha: 2,
+  argentina: 3,
+  england: 4,
+  inglaterra: 4,
+  portugal: 5,
+  brazil: 6,
+  brasil: 6,
+  netherlands: 7,
+  "paises baixos": 7,
+  morocco: 8,
+  marrocos: 8,
+  belgium: 9,
+  belgica: 9,
+  germany: 10,
+  alemanha: 10,
+  croatia: 11,
+  croacia: 11,
+  italy: 12,
+  italia: 12,
+  colombia: 13,
+  mexico: 14,
+  usa: 15,
+  "united states": 15,
+  "estados unidos": 15,
+  uruguay: 16,
+  uruguai: 16,
+  japan: 18,
+  japao: 18,
+  switzerland: 19,
+  suica: 19,
+  iran: 20,
+  ira: 20,
+  austria: 22,
+  "south korea": 23,
+  "coreia do sul": 23,
+  australia: 24,
+  ecuador: 25,
+  equador: 25,
+  turkey: 27,
+  turkiye: 27,
+  egypt: 31,
+  egito: 31,
+  norway: 33,
+  noruega: 33,
+  panama: 35,
+  algeria: 36,
+  argelia: 36,
+  czechia: 39,
+  tchequia: 39,
+  tunisia: 40,
+  scotland: 43,
+  escocia: 43,
+  sweden: 43,
+  suecia: 43,
+  "ivory coast": 45,
+  "costa do marfim": 45,
+  paraguay: 46,
+  paraguai: 46,
+  canada: 49,
+  qatar: 53,
+  catar: 53,
+  "saudi arabia": 54,
+  "arabia saudita": 54,
+  "south africa": 56,
+  "africa do sul": 56,
+  uzbekistan: 58,
+  uzbequistao: 58,
+  iraq: 59,
+  iraque: 59,
+  "dr congo": 60,
+  "rd congo": 60,
+  jordan: 62,
+  jordania: 62,
+  "cape verde": 69,
+  "cabo verde": 69,
+  "bosnia and herzegovina": 70,
+  "bosnia e herzegovina": 70,
+  ghana: 74,
+  gana: 74,
+  curacao: 82,
+  "curaçao": 82,
+  haiti: 83,
+  "new zealand": 85,
+  "nova zelandia": 85,
+};
+
 const teamNamePtBr = {
   Argentina: "Argentina",
   Australia: "Australia",
@@ -82,13 +212,16 @@ const teamNamePtBr = {
   Czechia: "Tchequia",
   Denmark: "Dinamarca",
   Ecuador: "Equador",
+  Egypt: "Egito",
   England: "Inglaterra",
   France: "Franca",
   Germany: "Alemanha",
   Ghana: "Gana",
   Iran: "Ira",
+  Iraq: "Iraque",
   Italy: "Italia",
   Japan: "Japao",
+  Jordan: "Jordania",
   Mexico: "Mexico",
   Morocco: "Marrocos",
   Netherlands: "Paises Baixos",
@@ -106,6 +239,7 @@ const teamNamePtBr = {
   "South Korea": "Coreia do Sul",
   Spain: "Espanha",
   Switzerland: "Suica",
+  Sweden: "Suecia",
   Tunisia: "Tunisia",
   Uruguay: "Uruguai",
   USA: "Estados Unidos",
@@ -119,6 +253,63 @@ const teamNamePtBr = {
   "Ivory Coast": "Costa do Marfim",
   "Republic of Ireland": "Republica da Irlanda",
   "United Arab Emirates": "Emirados Arabes Unidos",
+};
+
+const espnFlagCodes = {
+  alg: "dz",
+  arg: "ar",
+  aus: "au",
+  aut: "at",
+  bel: "be",
+  bih: "ba",
+  bra: "br",
+  can: "ca",
+  civ: "ci",
+  col: "co",
+  cro: "hr",
+  cpv: "cv",
+  cze: "cz",
+  ecu: "ec",
+  egy: "eg",
+  eng: "gb-eng",
+  esp: "es",
+  fra: "fr",
+  ger: "de",
+  gha: "gh",
+  hai: "ht",
+  irn: "ir",
+  irq: "iq",
+  jor: "jo",
+  jpn: "jp",
+  kors: "kr",
+  ksa: "sa",
+  mar: "ma",
+  mex: "mx",
+  ned: "nl",
+  nor: "no",
+  nzl: "nz",
+  pan: "pa",
+  par: "py",
+  por: "pt",
+  qat: "qa",
+  rdc: "cd",
+  rsa: "za",
+  sco: "gb-sct",
+  sen: "sn",
+  sui: "ch",
+  swe: "se",
+  tun: "tn",
+  tur: "tr",
+  uru: "uy",
+  usa: "us",
+  uzb: "uz",
+};
+
+const teamFlagCodes = {
+  curacao: "cw",
+  "curaçao": "cw",
+  "rd congo": "cd",
+  "republica democratica do congo": "cd",
 };
 
 function loadEnvFile() {
@@ -150,7 +341,8 @@ function normalizeName(name) {
 }
 
 function getSeedRank(name, fallback = 75) {
-  return fifaRankingSeed[normalizeName(name)] || fallback;
+  const normalized = normalizeName(name);
+  return fifaRankingOverrides[normalized] || fifaRankingSeed[normalized] || fallback;
 }
 
 function translateTeamName(name) {
@@ -163,16 +355,21 @@ function translateTeamName(name) {
   return teamNamePtBr[name] || name;
 }
 
+function flagCodeForTeam(apiTeam, translatedName) {
+  const logoCode = /\/([^/.]+)\.png$/i.exec(apiTeam.logo || "")?.[1]?.toLowerCase();
+  const byLogo = espnFlagCodes[logoCode];
+  if (byLogo) return byLogo;
+
+  return teamFlagCodes[normalizeName(translatedName)] || teamFlagCodes[normalizeName(apiTeam.displayName || apiTeam.name)] || "";
+}
+
 function rankingWeight(rank) {
-  return Math.max(48, 100 - Math.log(rank + 1) * 12.8);
+  const safeRank = Math.max(1, Number(rank) || 75);
+  return Number(clamp(92 - Math.log(safeRank) * 10.8, 36, 92).toFixed(1));
 }
 
 function currentWeight(team) {
-  const calibration = modelCalibration();
-  const base = rankingWeight(team.fifaRank);
-  const profile = (team.attack + team.defense - 2) * 9 * calibration.profileMultiplier;
-  const playerImpact = (team.playerImpact || 0) * calibration.playerImpactMultiplier;
-  return Number((base + team.form * calibration.formMultiplier + profile + playerImpact).toFixed(1));
+  return Number(team.strength?.overall?.toFixed(1) || team.weight || team.baseStrength || rankingWeight(team.fifaRank));
 }
 
 function clamp(value, min, max) {
@@ -183,39 +380,78 @@ function predictMatch(match, teams) {
   const calibration = modelCalibration();
   const home = teams[match.home];
   const away = teams[match.away];
-  const homeWeight = currentWeight(home);
-  const awayWeight = currentWeight(away);
+  const homeProfile = predictionProfile(home);
+  const awayProfile = predictionProfile(away);
+  const homeWeight = homeProfile.overall;
+  const awayWeight = awayProfile.overall;
   const diff = (homeWeight - awayWeight) * calibration.diffMultiplier;
-  const drawChance = clamp(27 + calibration.drawBias - Math.abs(diff) * 0.55, 9, 34);
-  const homeChance = clamp((100 - drawChance) / 2 + diff * 1.15, 7, 84);
+  const attackGapHome = homeProfile.attack - awayProfile.defense;
+  const attackGapAway = awayProfile.attack - homeProfile.defense;
+  const formGap = homeProfile.form - awayProfile.form;
+  const playerGap = homeProfile.players - awayProfile.players;
+  const expectedHome = expectedGoals(1.18 + diff / 32 + attackGapHome / 42 + formGap / 85 + playerGap / 70, calibration);
+  const expectedAway = expectedGoals(1.08 - diff / 34 + attackGapAway / 42 - formGap / 90 - playerGap / 75, calibration);
+  const drawChance = clamp(28 + calibration.drawBias - Math.abs(diff) * 0.42 - Math.abs(expectedHome - expectedAway) * 4.5, 10, 36);
+  const homeChance = clamp((100 - drawChance) / 2 + diff * 1.05 + (expectedHome - expectedAway) * 6, 6, 86);
   const awayChance = 100 - drawChance - homeChance;
-  const homeGoals = clamp(Math.round(1.15 + diff / 18 + (home.attack - away.defense) * 1.6 * calibration.profileMultiplier), 0, 5);
-  const awayGoals = clamp(Math.round(1.05 - diff / 20 + (away.attack - home.defense) * 1.5 * calibration.profileMultiplier), 0, 5);
+  const homeGoals = clamp(Math.round(expectedHome), 0, 5);
+  const awayGoals = clamp(Math.round(expectedAway), 0, 5);
   const favoriteChance = Math.round(Math.max(homeChance, awayChance));
-  const confidence = clamp(Math.round(45 + Math.abs(diff) * 1.35), 42, 88);
+  const agreement = Math.sign(diff || 0) === Math.sign((expectedHome - expectedAway) || 0) ? 6 : -4;
+  const confidence = clamp(Math.round(44 + Math.abs(diff) * 1.05 + Math.abs(expectedHome - expectedAway) * 8 + agreement), 38, 91);
 
   return {
     homeGoals,
     awayGoals,
+    expectedGoals: {
+      home: Number(expectedHome.toFixed(2)),
+      away: Number(expectedAway.toFixed(2)),
+    },
     homeChance: Math.round(homeChance),
     drawChance: Math.round(drawChance),
     awayChance: Math.round(awayChance),
     favoriteChance,
     confidence,
-    reason: buildReason(home, away, diff, homeWeight, awayWeight),
+    reason: buildReason(home, away, diff, homeWeight, awayWeight, expectedHome, expectedAway),
+    model: {
+      home: homeProfile,
+      away: awayProfile,
+    },
   };
 }
 
-function buildReason(home, away, diff, homeWeight, awayWeight) {
+function predictionProfile(team) {
+  if (team.strength) return team.strength;
+
+  const base = rankingWeight(team.fifaRank);
+  return {
+    base,
+    form: (team.form || 0) * 2.8,
+    attack: base + ((team.attack || 1) - 1) * 24,
+    defense: base + ((team.defense || 1) - 1) * 24,
+    players: team.playerImpact || 0,
+    opponents: 0,
+    overall: currentWeight({ ...team, strength: null }),
+  };
+}
+
+function expectedGoals(value, calibration) {
+  const evaluated = calibration.evaluated || 0;
+  const exactRate = calibration.exactRate || 0;
+  const scoreCorrection = evaluated ? clamp(1 + (0.28 - exactRate) * 0.12, 0.94, 1.08) : 1;
+  return clamp(value * scoreCorrection, 0.15, 4.8);
+}
+
+function buildReason(home, away, diff, homeWeight, awayWeight, expectedHome, expectedAway) {
   const gap = Math.abs(diff).toFixed(1);
   const stronger = diff >= 0 ? home : away;
   const weaker = diff >= 0 ? away : home;
 
   if (Math.abs(diff) < 4) {
-    return `Jogo equilibrado: ${home.name} tem peso ${homeWeight} e ${away.name} tem peso ${awayWeight}. A premonicao preserva chance relevante de empate porque o ranking e a forma atual nao abriram distancia grande.`;
+    return `Jogo equilibrado: ${home.name} tem peso ${homeWeight.toFixed(1)} e ${away.name} tem peso ${awayWeight.toFixed(1)}. Os gols esperados ficaram em ${expectedHome.toFixed(2)} x ${expectedAway.toFixed(2)}, entao a premonicao preserva chance relevante de empate.`;
   }
 
-  return `${stronger.name} aparece acima por ${gap} pontos de peso contra ${weaker.name}. O modelo combina ranking FIFA, desempenho na Copa e perfil ataque/defesa para transformar essa vantagem em placar simples.`;
+  return `${stronger.name} aparece acima por ${gap} pontos de peso contra ${weaker.name}. O modelo combina ranking FIFA, forma na Copa, forca dos adversarios, ataque/defesa e media dos principais jogadores antes de arredondar os gols esperados (${expectedHome.toFixed(2)} x ${expectedAway.toFixed(2)}).`;
 }
 
 function isFinished(status) {
@@ -310,6 +546,7 @@ function ensureTeam(teams, apiTeam, standingsTeam) {
   teams[key] = {
     name: apiTeam.name,
     logo: apiTeam.logo || existing?.logo || "",
+    flagCode: flagCodeForTeam(apiTeam, apiTeam.name) || existing?.flagCode || "",
     fifaRank: existing?.fifaRank || getSeedRank(apiTeam.name, rankFallback),
     form: existing?.form || 0,
     attack: existing?.attack || 1,
@@ -449,6 +686,7 @@ async function buildEspnWorldCupPayload() {
     if (!home || !away) return;
 
     applyResult(teamRecords, home.team.id, away.team.id, Number(home.score), Number(away.score));
+    applyOpponentQuality(teamRecords, home, away);
     applyCompetitorStats(statTotals, home);
     applyCompetitorStats(statTotals, away);
   });
@@ -460,15 +698,35 @@ async function buildEspnWorldCupPayload() {
     const played = record.played || 0;
     const pointsPerGame = played ? record.points / played : 0;
     const goalDiff = record.goalsFor - record.goalsAgainst;
+    const goalsForPerGame = played ? record.goalsFor / played : 0;
+    const goalsAgainstPerGame = played ? record.goalsAgainst / played : 0;
     const shotsPerGame = played ? stats.totalShots / played : 0;
     const shotsOnTargetPerGame = played ? stats.shotsOnTarget / played : 0;
     const possession = stats.possessionSamples ? stats.possessionTotal / stats.possessionSamples : 50;
+    const opponentStrength = record.opponentSamples ? record.opponentRankWeightTotal / record.opponentSamples : rankingWeight(75);
+    const players = (Array.isArray(playerImpact.players) ? playerImpact.players : Object.values(playerImpact.players || {})).slice(0, 18);
+    const topPlayers = players.slice(0, 5);
+    const topPlayerAverage = topPlayers.length ? topPlayers.reduce((sum, player) => sum + Number(player.average || 0), 0) / topPlayers.length : 6;
 
     team.form = Number((pointsPerGame * 0.85 + goalDiff * 0.22 + shotsOnTargetPerGame * 0.08).toFixed(2));
     team.attack = Number((1 + record.goalsFor * 0.035 + shotsPerGame * 0.006 + playerImpact.attack * 0.01).toFixed(2));
     team.defense = Number((1 - record.goalsAgainst * 0.035 + (possession - 50) * 0.002 + playerImpact.defense * 0.01).toFixed(2));
     team.playerImpact = Number(clamp(playerImpact.total, -3, 5).toFixed(2));
     team.playerHighlights = playerImpact.highlights.slice(0, 4);
+    team.players = players;
+    team.strength = buildTeamStrength(team, {
+      base: rankingWeight(team.fifaRank),
+      played,
+      pointsPerGame,
+      goalDiff,
+      goalsForPerGame,
+      goalsAgainstPerGame,
+      shotsPerGame,
+      shotsOnTargetPerGame,
+      possession,
+      opponentStrength,
+      topPlayerAverage,
+    });
     team.weight = currentWeight(team);
     team.lastMatch = played
       ? `${record.points} pts, ${record.wins}-${record.draws}-${record.losses}, saldo ${goalDiff}; impacto jogadores ${team.playerImpact >= 0 ? "+" : ""}${team.playerImpact}.`
@@ -508,6 +766,7 @@ function ensureEspnTeam(teams, apiTeam) {
     teams[key] = {
       name,
       logo: apiTeam.logo || "",
+      flagCode: flagCodeForTeam(apiTeam, name),
       fifaRank: getSeedRank(name, getSeedRank(originalName)),
       form: 0,
       attack: 1,
@@ -556,6 +815,64 @@ function emptyRecord() {
     points: 0,
     goalsFor: 0,
     goalsAgainst: 0,
+    opponentRankWeightTotal: 0,
+    opponentSamples: 0,
+  };
+}
+
+function applyOpponentQuality(records, home, away) {
+  const homeRecord = records[String(home.team.id)];
+  const awayRecord = records[String(away.team.id)];
+  if (!homeRecord || !awayRecord) return;
+
+  const homeName = translateTeamName(home.team.displayName || home.team.name);
+  const awayName = translateTeamName(away.team.displayName || away.team.name);
+  homeRecord.opponentRankWeightTotal += rankingWeight(getSeedRank(awayName, getSeedRank(away.team.displayName || away.team.name)));
+  awayRecord.opponentRankWeightTotal += rankingWeight(getSeedRank(homeName, getSeedRank(home.team.displayName || home.team.name)));
+  homeRecord.opponentSamples += 1;
+  awayRecord.opponentSamples += 1;
+}
+
+function buildTeamStrength(team, context) {
+  const calibration = modelCalibration();
+  const sampleConfidence = context.played ? clamp(context.played / 3, 0.35, 1) : 0;
+  const playerStrength = clamp(((context.topPlayerAverage - 6.5) * 1.9 + (team.playerImpact || 0) * 0.75) * sampleConfidence, -3.5, 6);
+  const formStrength = context.played
+    ? clamp(((context.pointsPerGame - 1.15) * 2.5 + (context.goalDiff / context.played) * 1.15 + (context.shotsOnTargetPerGame - 3.2) * 0.38) * sampleConfidence, -5.5, 7)
+    : 0;
+  const opponentStrength = clamp((context.opponentStrength - rankingWeight(55)) * 0.12 * sampleConfidence, -2.5, 4);
+  const attackingForm = context.played
+    ? (context.goalsForPerGame - 1.15) * 3.2 + (context.shotsPerGame - 10) * 0.11 + (context.shotsOnTargetPerGame - 3.2) * 0.42
+    : 0;
+  const defensiveForm = context.played
+    ? (1.1 - context.goalsAgainstPerGame) * 3.2 + (context.possession - 50) * 0.035
+    : 0;
+  const attackModifier = clamp(attackingForm * sampleConfidence + playerStrength * 0.45, -6, 8);
+  const defenseModifier = clamp(defensiveForm * sampleConfidence + playerStrength * 0.25, -6, 8);
+  const attackStrength = context.base + attackModifier;
+  const defenseStrength = context.base + defenseModifier;
+  const profileBalance = ((attackStrength + defenseStrength) / 2 - context.base) * 0.65;
+  const rawOverall =
+    context.base +
+    formStrength * calibration.formMultiplier * 0.42 +
+    playerStrength * calibration.playerImpactMultiplier +
+    opponentStrength +
+    profileBalance;
+  const maxCupBoost = context.played ? 5 + context.played * 2.5 : 1.5;
+  const maxCupDrop = context.played ? 5 + context.played * 2 : 1.5;
+  const overall = clamp(rawOverall, context.base - maxCupDrop, context.base + maxCupBoost);
+
+  return {
+    base: Number(context.base.toFixed(1)),
+    form: Number(formStrength.toFixed(1)),
+    attack: Number(attackStrength.toFixed(1)),
+    defense: Number(defenseStrength.toFixed(1)),
+    players: Number(playerStrength.toFixed(1)),
+    opponents: Number(opponentStrength.toFixed(1)),
+    sampleConfidence: Number(sampleConfidence.toFixed(2)),
+    topPlayerAverage: Number(context.topPlayerAverage.toFixed(2)),
+    expectedProfile: context.played ? "copa" : "ranking-base",
+    overall: Number(clamp(overall, 34, 96).toFixed(1)),
   };
 }
 
@@ -576,6 +893,7 @@ function emptyPlayerImpact() {
     defense: 0,
     total: 0,
     highlights: [],
+    players: {},
   };
 }
 
@@ -601,6 +919,22 @@ async function buildPlayerImpacts(events) {
 
   Object.values(impacts).forEach((impact) => {
     impact.total = clamp(impact.attack + impact.defense, -3, 5);
+    impact.players = Object.values(impact.players)
+      .map((player) => {
+        const games = player.games || 0;
+        const gamesForAverage = Math.max(1, games);
+        const cappedTotal = clamp(player.total, 0, gamesForAverage * 10);
+
+        return {
+          ...player,
+          games,
+          total: Number(cappedTotal.toFixed(2)),
+          average: Number((cappedTotal / gamesForAverage).toFixed(2)),
+          attack: Number(player.attack.toFixed(2)),
+          defense: Number(player.defense.toFixed(2)),
+        };
+      })
+      .sort((a, b) => b.average - a.average || b.total - a.total || a.name.localeCompare(b.name, "pt-BR"));
   });
 
   return impacts;
@@ -631,6 +965,37 @@ function ensureImpact(impacts, teamId) {
   return impacts[key];
 }
 
+function ensureImpactPlayer(impact, athlete) {
+  const name = athlete?.displayName || athlete?.fullName || athlete?.shortName || "Jogador";
+  const key = String(athlete?.id || name);
+
+  if (!impact.players[key]) {
+    impact.players[key] = {
+      id: key,
+      name,
+      games: 0,
+      total: 0,
+      attack: 0,
+      defense: 0,
+      goals: 0,
+      assists: 0,
+    };
+  }
+
+  return impact.players[key];
+}
+
+function addPlayerScore(impact, athlete, score, details = {}, countGame = false) {
+  const player = ensureImpactPlayer(impact, athlete);
+  if (countGame) player.games += 1;
+
+  player.total += score.total;
+  player.attack += score.attack;
+  player.defense += score.defense;
+  player.goals += details.goals || 0;
+  player.assists += details.assists || 0;
+}
+
 function applyLeaderImpacts(impacts, teamLeaders) {
   teamLeaders.forEach((teamLeader) => {
     const teamId = teamLeader.team?.id;
@@ -644,6 +1009,18 @@ function applyLeaderImpacts(impacts, teamLeaders) {
 
         impact.attack += delta.attack;
         impact.defense += delta.defense;
+        addPlayerScore(
+          impact,
+          leader.athlete,
+          {
+            attack: delta.attack,
+            defense: delta.defense,
+            total: delta.attack + delta.defense,
+          },
+          {},
+          false
+        );
+
         if (impact.highlights.length < 8) {
           impact.highlights.push({
             player: leader.athlete?.displayName || "Jogador",
@@ -669,11 +1046,62 @@ function applyRosterImpacts(impacts, rosters) {
       const shotsOnTarget = numberStat(stats.shotsOnTarget);
       const yellowCards = numberStat(stats.yellowCards);
       const redCards = numberStat(stats.redCards);
+      const score = playerScoreFromStats(stats);
 
       impact.attack += goals * 0.18 + assists * 0.12 + shotsOnTarget * 0.03;
       impact.defense -= yellowCards * 0.02 + redCards * 0.25;
+      if (score) {
+        addPlayerScore(impact, player.athlete || player, score, { goals, assists }, true);
+      }
     });
   });
+}
+
+function playerScoreFromStats(stats) {
+  const minutes = numberStat(stats.minutes) || numberStat(stats.minutesPlayed) || numberStat(stats.totalMinutes);
+  const goals = numberStat(stats.totalGoals);
+  const assists = numberStat(stats.goalAssists);
+  const shotsOnTarget = numberStat(stats.shotsOnTarget);
+  const totalShots = numberStat(stats.totalShots);
+  const totalPasses = numberStat(stats.totalPasses);
+  const accuratePasses = numberStat(stats.accuratePasses);
+  const chancesCreated = numberStat(stats.chancesCreated);
+  const defensiveInterventions = numberStat(stats.defensiveInterventions);
+  const tacklesWon = numberStat(stats.tacklesWon);
+  const interceptions = numberStat(stats.interceptions);
+  const clearances = numberStat(stats.clearances);
+  const saves = numberStat(stats.saves);
+  const yellowCards = numberStat(stats.yellowCards);
+  const redCards = numberStat(stats.redCards);
+  const activity =
+    minutes +
+    goals +
+    assists +
+    shotsOnTarget +
+    totalShots +
+    totalPasses +
+    accuratePasses +
+    chancesCreated +
+    defensiveInterventions +
+    tacklesWon +
+    interceptions +
+    clearances +
+    saves +
+    yellowCards +
+    redCards;
+
+  if (!activity) return null;
+
+  const base = minutes ? 5.55 + clamp(minutes / 90, 0, 1) * 0.55 : 5.85;
+  const attack = goals * 1.25 + assists * 0.85 + shotsOnTarget * 0.28 + totalShots * 0.08 + accuratePasses * 0.01 + chancesCreated * 0.18;
+  const defense = defensiveInterventions * 0.14 + tacklesWon * 0.18 + interceptions * 0.2 + clearances * 0.1 + saves * 0.35;
+  const penalties = yellowCards * 0.4 + redCards * 1.6;
+
+  return {
+    attack,
+    defense,
+    total: clamp(base + attack + defense - penalties, 0, 10),
+  };
 }
 
 function playerMetricDelta(metricName, statistics) {
@@ -787,7 +1215,8 @@ function statsObject(statistics = []) {
 }
 
 function numberStat(value) {
-  const number = Number(String(value || "0").replace("%", ""));
+  const match = String(value || "0").replace(",", ".").match(/-?\d+(?:\.\d+)?/);
+  const number = match ? Number(match[0]) : 0;
   return Number.isFinite(number) ? number : 0;
 }
 
@@ -882,6 +1311,7 @@ function ensureStandingTeam(groupTable, teamKey, team) {
     teamKey,
     name: team?.name || "Selecao",
     logo: team?.logo || "",
+    flagCode: team?.flagCode || "",
     played: 0,
     wins: 0,
     draws: 0,
@@ -1123,6 +1553,7 @@ function snapshotPrediction(match, teams) {
     away: teams[match.away]?.name,
     homeGoals: match.prediction.homeGoals,
     awayGoals: match.prediction.awayGoals,
+    expectedGoals: match.prediction.expectedGoals,
     homeChance: match.prediction.homeChance,
     drawChance: match.prediction.drawChance,
     awayChance: match.prediction.awayChance,
