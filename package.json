@@ -5,7 +5,11 @@
   "description": "App de premonicoes da Copa com dados publicos da ESPN.",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "pg": "^8.12.0"
   },
   "engines": {
     "node": ">=18"

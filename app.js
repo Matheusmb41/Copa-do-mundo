@@ -85,15 +85,26 @@ const teamMark = (team) => {
 };
 
 const isFinished = (match) => ["FT", "AET", "PEN"].includes(match.status);
-const isLive = (match) => match.status === "LIVE";
+const isLive = (match) => ["LIVE", "1H", "2H", "HT", "ET", "P"].includes(match.status);
 
 const scoreFor = (match) => {
+  if (isLive(match) && match.actualScore) {
+    return {
+      home: match.actualScore.home,
+      away: match.actualScore.away,
+      label: "Placar ao vivo",
+      chance: "Ao vivo",
+      kind: "live",
+    };
+  }
+
   if (isFinished(match) && match.actualScore) {
     return {
       home: match.actualScore.home,
       away: match.actualScore.away,
       label: "Final",
       chance: "Placar",
+      kind: "real",
     };
   }
 
@@ -102,6 +113,7 @@ const scoreFor = (match) => {
     away: match.prediction?.awayGoals ?? "-",
     label: "Premonicao",
     chance: `${match.prediction?.favoriteChance ?? 0}%`,
+    kind: "prediction",
   };
 };
 
@@ -168,7 +180,7 @@ const currentTargetMatch = () => {
 
   const now = new Date();
   const todayMatches = datedMatches.filter((match) => sameCalendarDay(new Date(match.timestamp * 1000), now));
-  const liveMatch = todayMatches.find((match) => match.status === "LIVE");
+  const liveMatch = todayMatches.find(isLive);
   if (liveMatch) return liveMatch;
 
   const nextTodayMatch = todayMatches.find((match) => new Date(match.timestamp * 1000) >= now);
@@ -430,37 +442,127 @@ const renderPredictionStats = () => {
     return;
   }
 
-  const { total, evaluated, awaitingResult, resultWithoutPrediction, summary, matches } = predictionHistory;
-  const evaluatedMatches = (matches || []).filter((match) => match.evaluation).slice(-8).reverse();
-  const trackedMatches = (matches || [])
-    .filter((match) => match.initialPrediction || match.result)
-    .slice()
-    .sort((a, b) => (b.date || 0) - (a.date || 0))
-    .slice(0, 24);
-  const wrongDirection = Math.max(0, evaluated - (summary.direction || 0));
+  const { total, awaitingResult, resultWithoutPrediction, matches } = predictionHistory;
+  const historyMatches = (matches || []).map(normalizeHistoryEvaluation);
+  const allEvaluatedMatches = historyMatches
+    .filter((match) => match.evaluation && match.initialPrediction && match.result)
+    .sort((a, b) => (b.date || 0) - (a.date || 0));
+  const evaluatedMatches = allEvaluatedMatches.slice(0, 8);
+  const evaluated = allEvaluatedMatches.length || predictionHistory.evaluated || 0;
+  const summary = allEvaluatedMatches.length ? summarizeEvaluations(allEvaluatedMatches) : predictionHistory.summary;
 
   container.innerHTML = `
     <section class="stats-overview">
       ${statCard("Premonicoes guardadas", total)}
       ${statCard("Avaliadas", evaluated)}
       ${statCard("Aguardando resultado", awaitingResult)}
-      ${statCard("Erros de resultado", wrongDirection)}
+      ${statCard("Erro medio de gols", formatStatDecimal(summary.averageGoalError))}
     </section>
     <section class="accuracy-grid">
       ${accuracyCard("Placar exato", summary.exactScore, evaluated)}
-      ${accuracyCard("Direcao correta", summary.direction, evaluated)}
+      ${accuracyCard("Acerto geral do resultado", summary.direction, evaluated)}
       ${accuracyCard("Vencedor", summary.winner, evaluated)}
       ${accuracyCard("Empate", summary.draw, evaluated)}
     </section>
+    ${renderProbabilityBuckets(predictionHistory.probabilityBuckets)}
     <section class="details-card">
       <h3>Ultimas avaliacoes</h3>
       ${evaluatedMatches.length ? renderEvaluatedMatches(evaluatedMatches) : "<p>Nenhum jogo com premonicao anterior foi finalizado ainda.</p>"}
     </section>
-    <section class="details-card">
-      <h3>Jogos acompanhados</h3>
-      ${trackedMatches.length ? renderTrackedMatches(trackedMatches) : "<p>Nenhum jogo foi guardado no historico ainda.</p>"}
-    </section>
     ${renderCalibration(predictionHistory.calibration)}
+  `;
+};
+
+const normalizeHistoryEvaluation = (match) => {
+  if (!match.initialPrediction || !match.result) return match;
+
+  return {
+    ...match,
+    evaluation: {
+      ...evaluateHistoryPrediction(match.initialPrediction, match.result),
+      ...(match.evaluation || {}),
+    },
+  };
+};
+
+const historyDirection = (homeGoals, awayGoals) => {
+  if (homeGoals > awayGoals) return "home";
+  if (awayGoals > homeGoals) return "away";
+  return "draw";
+};
+
+const evaluateHistoryPrediction = (prediction, result) => {
+  const predictedWinner = prediction.winner || historyDirection(prediction.homeGoals, prediction.awayGoals);
+  const actualWinner = result.winner || historyDirection(result.homeGoals, result.awayGoals);
+  const homeGoalError = Math.abs(prediction.homeGoals - result.homeGoals);
+  const awayGoalError = Math.abs(prediction.awayGoals - result.awayGoals);
+  const expectedHome = Number(prediction.expectedGoals?.home);
+  const expectedAway = Number(prediction.expectedGoals?.away);
+
+  return {
+    exactScore: prediction.homeGoals === result.homeGoals && prediction.awayGoals === result.awayGoals,
+    winner: predictedWinner === actualWinner && actualWinner !== "draw",
+    draw: predictedWinner === "draw" && actualWinner === "draw",
+    loser: predictedWinner === actualWinner && actualWinner !== "draw",
+    direction: predictedWinner === actualWinner,
+    homeGoalError,
+    awayGoalError,
+    totalGoalError: homeGoalError + awayGoalError,
+    totalGoalsError: Math.abs(prediction.homeGoals + prediction.awayGoals - result.homeGoals - result.awayGoals),
+    expectedGoalError:
+      Number.isFinite(expectedHome) && Number.isFinite(expectedAway)
+        ? Number((Math.abs(expectedHome - result.homeGoals) + Math.abs(expectedAway - result.awayGoals)).toFixed(2))
+        : null,
+  };
+};
+
+const summarizeEvaluations = (matches) => {
+  const summary = matches.reduce(
+    (acc, match) => {
+      acc.exactScore += match.evaluation.exactScore ? 1 : 0;
+      acc.winner += match.evaluation.winner ? 1 : 0;
+      acc.draw += match.evaluation.draw ? 1 : 0;
+      acc.direction += match.evaluation.direction ? 1 : 0;
+      acc.totalGoalError += Number(match.evaluation.totalGoalError || 0);
+      acc.totalGoalsError += Number(match.evaluation.totalGoalsError || 0);
+      acc.expectedGoalError += Number(match.evaluation.expectedGoalError || 0);
+      return acc;
+    },
+    { exactScore: 0, winner: 0, draw: 0, direction: 0, totalGoalError: 0, totalGoalsError: 0, expectedGoalError: 0 }
+  );
+
+  summary.averageGoalError = matches.length ? Number((summary.totalGoalError / matches.length).toFixed(2)) : 0;
+  summary.averageTotalGoalsError = matches.length ? Number((summary.totalGoalsError / matches.length).toFixed(2)) : 0;
+  summary.averageExpectedGoalError = matches.length ? Number((summary.expectedGoalError / matches.length).toFixed(2)) : 0;
+
+  return summary;
+};
+
+const formatStatDecimal = (value) => {
+  const number = Number(value || 0);
+  return Number.isFinite(number) ? number.toFixed(2) : "0.00";
+};
+
+const renderProbabilityBuckets = (buckets = []) => {
+  if (!buckets.length) return "";
+
+  return `
+    <section class="details-card probability-buckets">
+      <h3>Calibracao por chance</h3>
+      <div class="bucket-list">
+        ${buckets
+          .map(
+            (bucket) => `
+              <div class="bucket-row">
+                <span>${bucket.label}</span>
+                <strong>${bucket.rate}%</strong>
+                <small>${bucket.hits}/${bucket.total}</small>
+              </div>
+            `
+          )
+          .join("")}
+      </div>
+    </section>
   `;
 };
 
@@ -483,11 +585,19 @@ const renderCalibration = (calibration) => {
         ${calibrationItem("Peso da forma", calibration.formMultiplier)}
         ${calibrationItem("Impacto jogadores", calibration.playerImpactMultiplier)}
         ${calibrationItem("Agressividade", calibration.diffMultiplier)}
+        ${calibrationItem("Ajuste de gols", calibration.goalVolumeMultiplier || 1)}
+        ${calibrationItem("Vies de gols", formatSignedDecimal(calibration.goalBias))}
         ${calibrationItem("Tendencia a empate", calibration.drawBias > 0 ? `+${calibration.drawBias}` : calibration.drawBias)}
       </div>
-      <p>Esses parametros mudam conforme as premonicoes sao avaliadas. Com poucos jogos, o ajuste e propositalmente pequeno.</p>
+      <p>Esses parametros mudam conforme as premonicoes sao avaliadas. O ajuste de gols usa o erro medio para reduzir ou aumentar levemente o volume dos placares.</p>
     </section>
   `;
+};
+
+const formatSignedDecimal = (value) => {
+  const number = Number(value || 0);
+  if (!Number.isFinite(number)) return "0.00";
+  return number > 0 ? `+${number.toFixed(2)}` : number.toFixed(2);
 };
 
 const calibrationItem = (label, value) => `
@@ -516,42 +626,20 @@ const renderEvaluatedMatches = (matches) => `
           <strong>${match.home} x ${match.away}</strong>
           <span>Premonicao: ${match.initialPrediction.homeGoals}-${match.initialPrediction.awayGoals}</span>
           <span>Placar: ${match.result.homeGoals}-${match.result.awayGoals}</span>
-          <small class="${match.evaluation.direction ? "hit" : "miss"}">${match.evaluation.exactScore ? "Placar exato" : match.evaluation.direction ? "Direcao correta" : "Errou"}</small>
+          <small class="${match.evaluation.direction ? "hit" : "miss"}">${match.evaluation.exactScore ? "Placar exato" : match.evaluation.direction ? "Acerto geral" : "Errou"}</small>
         </article>
       `)
       .join("")}
   </div>
 `;
 
-const renderTrackedMatches = (matches) => `
-  <div class="history-list">
-    ${matches
-      .map((match) => {
-        const prediction = match.latestPrediction || match.initialPrediction;
-        const status = match.result ? "Finalizado" : "Aguardando resultado";
-        const predictionText = prediction ? `${prediction.homeGoals}-${prediction.awayGoals}` : "Sem premonicao salva";
-        const resultText = match.result ? `${match.result.homeGoals}-${match.result.awayGoals}` : "Pendente";
-        const evaluationText = match.evaluation
-          ? match.evaluation.exactScore
-            ? "Placar exato"
-            : match.evaluation.direction
-              ? "Direcao correta"
-              : "Errou"
-          : match.result
-            ? "Resultado importado"
-            : "Aguardando";
-
-        return `
-          <article class="history-row">
-            <strong>${match.home} x ${match.away}</strong>
-            <span>Premonicao: ${predictionText}</span>
-            <span>Placar: ${resultText}</span>
-            <small class="${match.evaluation?.direction || match.evaluation?.exactScore ? "hit" : match.result ? "miss" : ""}">${status} - ${evaluationText}</small>
-          </article>
-        `;
-      })
-      .join("")}
-  </div>
+const liveIndicator = () => `
+  <span class="live-inline" aria-label="Jogo ao vivo">
+    <span></span>
+    <span></span>
+    <span></span>
+    <em>Ao vivo</em>
+  </span>
 `;
 
 const renderMatches = () => {
@@ -586,10 +674,12 @@ const renderMatches = () => {
           const away = appData.teams[match.away];
           const score = scoreFor(match);
           const active = activeMatchId === match.id;
+          const live = isLive(match);
+          const footerStatus = live ? liveIndicator() : isFinished(match) ? "Finalizado" : `${matchDisplayTime(match)} - ${score.label}`;
 
           return `
-            <article class="match-card${active ? " active" : ""}" data-match-id="${match.id}" data-current-match="${match.id === targetMatch?.id}">
-              <div class="chance-pill ${isFinished(match) ? "real" : ""}">${score.chance}</div>
+            <article class="match-card${active ? " active" : ""}${live ? " live" : ""}" data-match-id="${match.id}" data-current-match="${match.id === targetMatch?.id}">
+              <div class="chance-pill ${score.kind}">${score.chance}</div>
               <div class="match-group">${match.group}</div>
               <div class="team-line">
                 <div class="team-label">
@@ -606,7 +696,7 @@ const renderMatches = () => {
                 <span class="predicted-score">${score.away}</span>
               </div>
               <footer class="match-footer">
-                <span>${isFinished(match) ? "Finalizado" : `${matchDisplayTime(match)} - ${score.label}`}</span>
+                <span>${footerStatus}</span>
                 <span class="confidence-bar" title="Confianca da premonicao">
                   <span style="width: ${match.prediction?.confidence ?? 100}%"></span>
                 </span>
@@ -790,6 +880,40 @@ const statRow = (label, homeValue, awayValue, suffix = "") => `
   </div>
 `;
 
+const renderPredictionSnapshotCard = (title, prediction, home, away, emptyText = "Sem snapshot salvo para esse momento.") => {
+  if (!prediction) {
+    return `
+      <article class="details-card prediction-snapshot muted-snapshot">
+        <h3>${title}</h3>
+        <p>${emptyText}</p>
+      </article>
+    `;
+  }
+
+  const expectedGoals = prediction.expectedGoals
+    ? `<small>Gols esperados: ${Number(prediction.expectedGoals.home).toFixed(2)} x ${Number(prediction.expectedGoals.away).toFixed(2)}</small>`
+    : "";
+
+  return `
+    <article class="details-card prediction-snapshot">
+      <h3>${title}</h3>
+      <div class="snapshot-score">
+        <span>${home.name}</span>
+        <strong>${prediction.homeGoals}</strong>
+        <em>x</em>
+        <strong>${prediction.awayGoals}</strong>
+        <span>${away.name}</span>
+      </div>
+      <div class="snapshot-probabilities">
+        <span>${home.name}: ${prediction.homeChance ?? 0}%</span>
+        <span>Empate: ${prediction.drawChance ?? 0}%</span>
+        <span>${away.name}: ${prediction.awayChance ?? 0}%</span>
+      </div>
+      ${expectedGoals}
+    </article>
+  `;
+};
+
 const renderDetails = (matchId) => {
   const selectedId = matchId ?? selectedMatchId ?? currentTargetMatch()?.id ?? appData.matches[0]?.id;
   const match = appData.matches.find((item) => item.id === selectedId);
@@ -808,6 +932,25 @@ const renderDetails = (matchId) => {
   const home = appData.teams[match.home];
   const away = appData.teams[match.away];
   const score = scoreFor(match);
+
+  if (isLive(match)) {
+    const initialPrediction = match.initialPrediction || match.latestPrediction;
+    const currentPrediction = match.livePrediction || match.prediction;
+
+    container.innerHTML = `
+      <article class="details-card live-match-details">
+        <h3>${home.name} ${score.home} x ${score.away} ${away.name}</h3>
+        <p>${liveIndicator()} <span>${score.label}</span></p>
+      </article>
+      ${renderPredictionSnapshotCard("Premonicao inicial", initialPrediction, home, away, "Sem premonicao salva antes do inicio do jogo.")}
+      ${renderPredictionSnapshotCard("Premonicao atual", currentPrediction, home, away)}
+      ${renderMatchStats(match)}
+      ${renderPredictionFactors(home, away)}
+      ${renderPlayerHighlights(home)}
+      ${renderPlayerHighlights(away)}
+    `;
+    return;
+  }
 
   if (isFinished(match)) {
     container.innerHTML = `

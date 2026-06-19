@@ -4,113 +4,28 @@ const path = require("path");
 
 const ROOT = __dirname;
 const DATA_DIR = path.join(ROOT, "data");
+loadEnvFile();
+
 const HISTORY_FILE = path.join(DATA_DIR, "prediction-history.json");
+const SUMMARY_CACHE_FILE = path.join(DATA_DIR, "espn-summary-cache.json");
 const API_BASE_URL = "https://v3.football.api-sports.io";
 const ESPN_BASE_URL = "https://site.api.espn.com/apis/site/v2/sports/soccer/fifa.world";
 const PORT = Number(process.env.PORT || 3000);
 const DEFAULT_SEASON = Number(process.env.WORLD_CUP_SEASON || 2026);
 const CACHE_MS = Number(process.env.API_CACHE_MS || 1000 * 60 * 10);
 const PLAYER_SUMMARY_LIMIT = Number(process.env.PLAYER_SUMMARY_LIMIT || 32);
-
-loadEnvFile();
+const FIFA_RANKING_SOURCE = "Ranking FIFA masculino - base manual revisada em 2026-06-19";
 
 let cache = {
   expiresAt: 0,
   data: null,
 };
 
-let predictionHistory = loadPredictionHistory();
+let predictionHistory = createEmptyPredictionHistory();
+let predictionHistoryStore = createPredictionHistoryStore();
+let summaryCache = loadSummaryCache();
 
-const fifaRankingSeed = {
-  argentina: 1,
-  france: 2,
-  brazil: 5,
-  brasil: 5,
-  portugal: 6,
-  morocco: 6,
-  marrocos: 6,
-  england: 4,
-  inglaterra: 4,
-  netherlands: 7,
-  "paises baixos": 7,
-  spain: 8,
-  espanha: 8,
-  italy: 9,
-  italia: 9,
-  croatia: 10,
-  croacia: 10,
-  germany: 16,
-  alemanha: 16,
-  uruguay: 11,
-  uruguai: 11,
-  belgium: 3,
-  belgica: 3,
-  colombia: 13,
-  switzerland: 19,
-  suica: 19,
-  mexico: 14,
-  scotland: 43,
-  escocia: 43,
-  haiti: 86,
-  egypt: 31,
-  egito: 31,
-  sweden: 28,
-  suecia: 28,
-  iraq: 59,
-  iraque: 59,
-  jordan: 62,
-  jordania: 62,
-  algeria: 36,
-  argelia: 36,
-  "cape verde": 72,
-  "cabo verde": 72,
-  "ivory coast": 45,
-  "costa do marfim": 45,
-  iran: 20,
-  ira: 20,
-  norway: 33,
-  noruega: 33,
-  australia: 24,
-  austria: 22,
-  paraguay: 46,
-  paraguai: 46,
-  turkey: 27,
-  turkiye: 27,
-  türkiye: 27,
-  tunisia: 41,
-  tunisia: 41,
-  "saudi arabia": 54,
-  "arabia saudita": 54,
-  ecuador: 25,
-  equador: 25,
-  japan: 18,
-  japao: 18,
-  "new zealand": 89,
-  "nova zelandia": 89,
-  "south korea": 23,
-  "coreia do sul": 23,
-  panama: 35,
-  canada: 49,
-  qatar: 53,
-  catar: 53,
-  "south africa": 56,
-  "africa do sul": 56,
-  uzbekistan: 58,
-  uzbequistao: 58,
-  "dr congo": 60,
-  "rd congo": 60,
-  ghana: 67,
-  gana: 67,
-  "bosnia and herzegovina": 70,
-  "bosnia e herzegovina": 70,
-  czechia: 39,
-  tchequia: 39,
-  usa: 15,
-  "united states": 15,
-  "estados unidos": 15,
-};
-
-const fifaRankingOverrides = {
+const fifaRankingBase = {
   france: 1,
   franca: 1,
   spain: 2,
@@ -333,6 +248,144 @@ function loadEnvFile() {
   }
 }
 
+function createEmptyPredictionHistory() {
+  return { version: 1, matches: {} };
+}
+
+function createPredictionHistoryStore() {
+  if (process.env.DATABASE_URL) {
+    return createPostgresPredictionHistoryStore();
+  }
+
+  return createFilePredictionHistoryStore();
+}
+
+function createFilePredictionHistoryStore() {
+  return {
+    name: "json-file",
+    async load() {
+      if (!fs.existsSync(HISTORY_FILE)) {
+        return createEmptyPredictionHistory();
+      }
+
+      try {
+        const parsed = JSON.parse(fs.readFileSync(HISTORY_FILE, "utf8"));
+        return normalizePredictionHistory(parsed);
+      } catch (error) {
+        return createEmptyPredictionHistory();
+      }
+    },
+    async save(history) {
+      if (!fs.existsSync(DATA_DIR)) {
+        fs.mkdirSync(DATA_DIR, { recursive: true });
+      }
+
+      fs.writeFileSync(HISTORY_FILE, JSON.stringify(normalizePredictionHistory(history), null, 2));
+    },
+  };
+}
+
+function createPostgresPredictionHistoryStore() {
+  let Pool;
+
+  try {
+    ({ Pool } = require("pg"));
+  } catch (error) {
+    throw new Error("DATABASE_URL foi configurado, mas o pacote pg nao esta instalado. Rode npm install antes do deploy.");
+  }
+
+  const pool = new Pool({
+    connectionString: process.env.DATABASE_URL,
+    ssl: process.env.DATABASE_SSL === "false" ? false : { rejectUnauthorized: false },
+  });
+
+  return {
+    name: "postgres",
+    async load() {
+      await pool.query(`
+        create table if not exists prediction_history (
+          id text primary key,
+          record jsonb not null,
+          updated_at timestamptz not null default now()
+        )
+      `);
+
+      const result = await pool.query("select id, record from prediction_history");
+      const history = createEmptyPredictionHistory();
+
+      result.rows.forEach((row) => {
+        history.matches[row.id] = row.record;
+      });
+
+      return normalizePredictionHistory(history);
+    },
+    async save(history) {
+      const normalized = normalizePredictionHistory(history);
+      const records = Object.entries(normalized.matches);
+      if (!records.length) return;
+
+      const client = await pool.connect();
+      try {
+        await client.query("begin");
+        for (const [id, record] of records) {
+          await client.query(
+            `
+              insert into prediction_history (id, record, updated_at)
+              values ($1, $2, now())
+              on conflict (id) do update
+              set record = excluded.record,
+                  updated_at = now()
+            `,
+            [id, record]
+          );
+        }
+        await client.query("commit");
+      } catch (error) {
+        await client.query("rollback");
+        throw error;
+      } finally {
+        client.release();
+      }
+    },
+  };
+}
+
+function normalizePredictionHistory(history) {
+  return {
+    version: history?.version || 1,
+    matches: history?.matches && typeof history.matches === "object" ? history.matches : {},
+  };
+}
+
+async function initializePersistence() {
+  predictionHistoryStore = createPredictionHistoryStore();
+  predictionHistory = await predictionHistoryStore.load();
+}
+
+function loadSummaryCache() {
+  if (!fs.existsSync(SUMMARY_CACHE_FILE)) {
+    return { version: 1, events: {} };
+  }
+
+  try {
+    const parsed = JSON.parse(fs.readFileSync(SUMMARY_CACHE_FILE, "utf8"));
+    return {
+      version: parsed.version || 1,
+      events: parsed.events && typeof parsed.events === "object" ? parsed.events : {},
+    };
+  } catch (error) {
+    return { version: 1, events: {} };
+  }
+}
+
+function saveSummaryCache() {
+  if (!fs.existsSync(DATA_DIR)) {
+    fs.mkdirSync(DATA_DIR, { recursive: true });
+  }
+
+  fs.writeFileSync(SUMMARY_CACHE_FILE, JSON.stringify(summaryCache, null, 2));
+}
+
 function normalizeName(name) {
   return String(name || "")
     .normalize("NFD")
@@ -342,7 +395,7 @@ function normalizeName(name) {
 
 function getSeedRank(name, fallback = 75) {
   const normalized = normalizeName(name);
-  return fifaRankingOverrides[normalized] || fifaRankingSeed[normalized] || fallback;
+  return fifaRankingBase[normalized] || fallback;
 }
 
 function translateTeamName(name) {
@@ -438,7 +491,9 @@ function predictionProfile(team) {
 function expectedGoals(value, calibration) {
   const evaluated = calibration.evaluated || 0;
   const exactRate = calibration.exactRate || 0;
-  const scoreCorrection = evaluated ? clamp(1 + (0.28 - exactRate) * 0.12, 0.94, 1.08) : 1;
+  const exactCorrection = evaluated ? clamp(1 + (0.28 - exactRate) * 0.08, 0.96, 1.05) : 1;
+  const goalErrorCorrection = calibration.goalVolumeMultiplier || 1;
+  const scoreCorrection = clamp(exactCorrection * goalErrorCorrection, 0.86, 1.1);
   return clamp(value * scoreCorrection, 0.15, 4.8);
 }
 
@@ -456,6 +511,14 @@ function buildReason(home, away, diff, homeWeight, awayWeight, expectedHome, exp
 
 function isFinished(status) {
   return ["FT", "AET", "PEN"].includes(status);
+}
+
+function isLiveStatus(status) {
+  return ["LIVE", "1H", "2H", "HT", "ET", "P"].includes(status);
+}
+
+function isScheduledStatus(status) {
+  return !isFinished(status) && !isLiveStatus(status);
 }
 
 function formatMatchDay(isoDate) {
@@ -483,7 +546,7 @@ function formatMatchDay(isoDate) {
 
 function formatMatchTime(isoDate, status) {
   if (isFinished(status?.short)) return "Finalizado";
-  if (["1H", "2H", "HT", "ET", "P"].includes(status?.short)) return "Ao vivo";
+  if (isLiveStatus(status?.short)) return "Ao vivo";
 
   return new Intl.DateTimeFormat("pt-BR", {
     hour: "2-digit",
@@ -623,7 +686,7 @@ async function buildWorldCupPayload() {
         status,
         home,
         away,
-        actualScore: isFinished(status)
+        actualScore: isFinished(status) || isLiveStatus(status)
           ? {
               home: fixture.goals.home,
               away: fixture.goals.away,
@@ -639,12 +702,18 @@ async function buildWorldCupPayload() {
     team.weight = currentWeight(team);
   });
 
+  await updatePredictionHistory(matches, teams);
+  attachPredictionSnapshots(matches);
+
   const payload = {
     source: "api-football",
     season,
     updatedAt: new Date().toISOString(),
+    rankingSource: FIFA_RANKING_SOURCE,
+    historyStorage: predictionHistoryStore.name,
     teams,
     matches,
+    groups: buildGroupStandings(matches, teams),
   };
 
   cache = {
@@ -745,12 +814,15 @@ async function buildEspnWorldCupPayload() {
     .map((event) => convertEspnEvent(event, teams));
   const groups = buildGroupStandings(matches, teams);
 
-  updatePredictionHistory(matches, teams);
+  await updatePredictionHistory(matches, teams);
+  attachPredictionSnapshots(matches);
 
   return {
     source: "espn-public",
     season,
     updatedAt: new Date().toISOString(),
+    rankingSource: FIFA_RANKING_SOURCE,
+    historyStorage: predictionHistoryStore.name,
     calibration: modelCalibration(),
     teams,
     matches,
@@ -904,13 +976,37 @@ async function buildPlayerImpacts(events) {
     .slice(0, PLAYER_SUMMARY_LIMIT);
 
   const impacts = {};
+  let cacheChanged = false;
   const summaries = await mapWithConcurrency(finishedEvents, 6, async (event) => {
+    const cacheKey = String(event.id);
+    const cached = summaryCache.events[cacheKey];
+    if (cached?.summary) {
+      const compactSummary = compactPlayerSummary(cached.summary);
+      if (compactSummary !== cached.summary) {
+        cached.summary = compactSummary;
+        cacheChanged = true;
+      }
+      return compactSummary;
+    }
+
     try {
-      return await espnRequest(`/summary?event=${event.id}`);
+      const summary = await espnRequest(`/summary?event=${event.id}`);
+      summaryCache.events[cacheKey] = {
+        eventId: cacheKey,
+        eventDate: event.date,
+        cachedAt: new Date().toISOString(),
+        summary: compactPlayerSummary(summary),
+      };
+      cacheChanged = true;
+      return summaryCache.events[cacheKey].summary;
     } catch (error) {
       return null;
     }
   });
+
+  if (cacheChanged) {
+    saveSummaryCache();
+  }
 
   summaries.filter(Boolean).forEach((summary) => {
     applyLeaderImpacts(impacts, summary.leaders || []);
@@ -938,6 +1034,41 @@ async function buildPlayerImpacts(events) {
   });
 
   return impacts;
+}
+
+function compactPlayerSummary(summary = {}) {
+  if (summary.cacheShape === "player-impact-v1") return summary;
+
+  return {
+    cacheShape: "player-impact-v1",
+    leaders: (summary.leaders || []).map((teamLeader) => ({
+      team: { id: teamLeader.team?.id },
+      leaders: (teamLeader.leaders || []).map((category) => ({
+        name: category.name,
+        leaders: (category.leaders || []).map((leader) => ({
+          athlete: compactAthlete(leader.athlete),
+          statistics: leader.statistics || [],
+          displayValue: leader.displayValue,
+        })),
+      })),
+    })),
+    rosters: (summary.rosters || []).map((roster) => ({
+      team: { id: roster.team?.id },
+      roster: (roster.roster || []).map((player) => ({
+        athlete: compactAthlete(player.athlete || player),
+        stats: player.stats || [],
+      })),
+    })),
+  };
+}
+
+function compactAthlete(athlete = {}) {
+  return {
+    id: athlete.id,
+    displayName: athlete.displayName,
+    fullName: athlete.fullName,
+    shortName: athlete.shortName,
+  };
 }
 
 async function mapWithConcurrency(items, limit, mapper) {
@@ -1228,6 +1359,7 @@ function convertEspnEvent(event, teams) {
   const homeKey = `espn_${home.team.id}`;
   const awayKey = `espn_${away.team.id}`;
   const status = competition.status?.type?.completed ? "FT" : competition.status?.type?.state === "in" ? "LIVE" : "NS";
+  const scoreIsAvailable = isFinished(status) || isLiveStatus(status);
   const match = {
     id: Number(event.id),
     group: displayRoundName(event, competition),
@@ -1237,7 +1369,7 @@ function convertEspnEvent(event, teams) {
     status,
     home: homeKey,
     away: awayKey,
-    actualScore: status === "FT"
+    actualScore: scoreIsAvailable
       ? {
           home: Number(home.score),
           away: Number(away.score),
@@ -1454,44 +1586,37 @@ function publicStats(statistics = []) {
   };
 }
 
-function loadPredictionHistory() {
-  try {
-    if (!fs.existsSync(DATA_DIR)) {
-      fs.mkdirSync(DATA_DIR, { recursive: true });
-    }
-
-    if (!fs.existsSync(HISTORY_FILE)) {
-      return { version: 1, matches: {} };
-    }
-
-    return JSON.parse(fs.readFileSync(HISTORY_FILE, "utf8"));
-  } catch (error) {
-    return { version: 1, matches: {} };
-  }
+async function savePredictionHistory() {
+  await predictionHistoryStore.save(predictionHistory);
 }
 
-function savePredictionHistory() {
-  if (!fs.existsSync(DATA_DIR)) {
-    fs.mkdirSync(DATA_DIR, { recursive: true });
-  }
-
-  fs.writeFileSync(HISTORY_FILE, JSON.stringify(predictionHistory, null, 2));
-}
-
-function updatePredictionHistory(matches, teams) {
+async function updatePredictionHistory(matches, teams) {
   let changed = false;
 
   matches.forEach((match) => {
     const key = String(match.id);
     const existing = predictionHistory.matches[key];
 
-    if (!isFinished(match.status) && match.prediction) {
+    if (isScheduledStatus(match.status) && match.prediction) {
       if (!existing) {
         predictionHistory.matches[key] = createPredictionRecord(match, teams);
         changed = true;
       } else if (!existing.result) {
         existing.latestPrediction = snapshotPrediction(match, teams);
         existing.updatedAt = new Date().toISOString();
+        changed = true;
+      }
+      return;
+    }
+
+    if (isLiveStatus(match.status) && match.prediction) {
+      if (!existing) {
+        predictionHistory.matches[key] = createLiveOnlyRecord(match, teams);
+        changed = true;
+      } else if (!existing.result) {
+        existing.livePrediction = snapshotPrediction(match, teams);
+        existing.liveScore = match.actualScore ? snapshotResult(match, teams) : null;
+        existing.liveUpdatedAt = new Date().toISOString();
         changed = true;
       }
       return;
@@ -1506,12 +1631,19 @@ function updatePredictionHistory(matches, teams) {
         existing.evaluation = evaluatePrediction(existing.initialPrediction, match.actualScore);
         existing.completedAt = new Date().toISOString();
         changed = true;
+      } else if (existing.initialPrediction && !existing.evaluation) {
+        existing.evaluation = evaluatePrediction(existing.initialPrediction, {
+          home: existing.result.homeGoals,
+          away: existing.result.awayGoals,
+        });
+        existing.completedAt = existing.completedAt || new Date().toISOString();
+        changed = true;
       }
     }
   });
 
   if (changed) {
-    savePredictionHistory();
+    await savePredictionHistory();
   }
 }
 
@@ -1545,6 +1677,36 @@ function createResultOnlyRecord(match, teams) {
     createdAt: new Date().toISOString(),
     completedAt: new Date().toISOString(),
   };
+}
+
+function createLiveOnlyRecord(match, teams) {
+  return {
+    id: match.id,
+    group: match.group,
+    date: match.timestamp,
+    home: teams[match.home]?.name,
+    away: teams[match.away]?.name,
+    initialPrediction: null,
+    latestPrediction: null,
+    livePrediction: snapshotPrediction(match, teams),
+    liveScore: match.actualScore ? snapshotResult(match, teams) : null,
+    result: null,
+    evaluation: null,
+    createdAt: new Date().toISOString(),
+    liveUpdatedAt: new Date().toISOString(),
+  };
+}
+
+function attachPredictionSnapshots(matches) {
+  matches.forEach((match) => {
+    const record = predictionHistory.matches[String(match.id)];
+    if (!record) return;
+
+    match.initialPrediction = record.initialPrediction || null;
+    match.latestPrediction = record.latestPrediction || null;
+    match.livePrediction = record.livePrediction || null;
+    match.historyEvaluation = record.evaluation || null;
+  });
 }
 
 function snapshotPrediction(match, teams) {
@@ -1584,6 +1746,11 @@ function evaluatePrediction(prediction, actualScore) {
 
   const actualWinner = resultDirection(actualScore.home, actualScore.away);
   const predictedWinner = resultDirection(prediction.homeGoals, prediction.awayGoals);
+  const homeGoalError = Math.abs(prediction.homeGoals - actualScore.home);
+  const awayGoalError = Math.abs(prediction.awayGoals - actualScore.away);
+  const totalGoalError = homeGoalError + awayGoalError;
+  const expectedHome = Number(prediction.expectedGoals?.home);
+  const expectedAway = Number(prediction.expectedGoals?.away);
 
   return {
     exactScore: prediction.homeGoals === actualScore.home && prediction.awayGoals === actualScore.away,
@@ -1594,11 +1761,37 @@ function evaluatePrediction(prediction, actualScore) {
       actualWinner !== "draw" &&
       resultDirection(prediction.awayGoals, prediction.homeGoals) === resultDirection(actualScore.away, actualScore.home),
     direction: predictedWinner === actualWinner,
+    homeGoalError,
+    awayGoalError,
+    totalGoalError,
+    totalGoalsError: Math.abs(prediction.homeGoals + prediction.awayGoals - actualScore.home - actualScore.away),
+    expectedGoalError:
+      Number.isFinite(expectedHome) && Number.isFinite(expectedAway)
+        ? Number((Math.abs(expectedHome - actualScore.home) + Math.abs(expectedAway - actualScore.away)).toFixed(2))
+        : null,
+    favoriteChance: prediction.favoriteChance || Math.max(prediction.homeChance || 0, prediction.awayChance || 0),
+  };
+}
+
+function normalizedEvaluationRecord(record) {
+  if (!record?.initialPrediction || !record?.result) return record;
+
+  const computed = evaluatePrediction(record.initialPrediction, {
+    home: record.result.homeGoals,
+    away: record.result.awayGoals,
+  });
+
+  return {
+    ...record,
+    evaluation: {
+      ...computed,
+      ...(record.evaluation || {}),
+    },
   };
 }
 
 function modelCalibration() {
-  const records = Object.values(predictionHistory.matches || {});
+  const records = Object.values(predictionHistory.matches || {}).map(normalizedEvaluationRecord);
   const evaluated = records.filter((record) => record.evaluation && record.initialPrediction && record.result);
   const total = evaluated.length;
 
@@ -1614,12 +1807,35 @@ function modelCalibration() {
   const directionRate = directionHits / total;
   const exactRate = exactHits / total;
   const drawGap = (actualDraws - predictedDraws) / total;
+  const goalStats = evaluated.reduce(
+    (acc, record) => {
+      const predictedTotal = Number(record.initialPrediction.homeGoals || 0) + Number(record.initialPrediction.awayGoals || 0);
+      const actualTotal = Number(record.result.homeGoals || 0) + Number(record.result.awayGoals || 0);
+
+      acc.totalGoalError += Number(record.evaluation.totalGoalError || Math.abs(predictedTotal - actualTotal));
+      acc.predictedGoals += predictedTotal;
+      acc.actualGoals += actualTotal;
+      return acc;
+    },
+    { totalGoalError: 0, predictedGoals: 0, actualGoals: 0 }
+  );
+  const averageGoalError = goalStats.totalGoalError / total;
+  const averagePredictedGoals = goalStats.predictedGoals / total;
+  const averageActualGoals = goalStats.actualGoals / total;
+  const goalBias = averagePredictedGoals - averageActualGoals;
+  const goalErrorPressure = clamp((averageGoalError - 1.2) / 3, 0, 1);
+  const biasCorrection = clamp(1 - goalBias * 0.045 * confidenceFactor, 0.9, 1.08);
+  const cautionCorrection = clamp(1 - goalErrorPressure * 0.05 * confidenceFactor, 0.95, 1);
+  const goalVolumeMultiplier = clamp(biasCorrection * cautionCorrection, 0.88, 1.08);
 
   return {
     evaluated: total,
     confidenceFactor: Number(confidenceFactor.toFixed(2)),
     directionRate: Number(directionRate.toFixed(2)),
     exactRate: Number(exactRate.toFixed(2)),
+    averageGoalError: Number(averageGoalError.toFixed(2)),
+    goalBias: Number(goalBias.toFixed(2)),
+    goalVolumeMultiplier: Number(goalVolumeMultiplier.toFixed(3)),
     drawBias: Number(clamp(drawGap * 10 * confidenceFactor, -4, 6).toFixed(2)),
     diffMultiplier: Number(clamp(1 - (0.55 - directionRate) * 0.35 * confidenceFactor, 0.82, 1.12).toFixed(2)),
     formMultiplier: Number(clamp(2.8 - (0.5 - directionRate) * 0.45 * confidenceFactor, 2.35, 3.15).toFixed(2)),
@@ -1634,6 +1850,9 @@ function defaultCalibration(evaluated) {
     confidenceFactor: 0,
     directionRate: 0,
     exactRate: 0,
+    averageGoalError: 0,
+    goalBias: 0,
+    goalVolumeMultiplier: 1,
     drawBias: 0,
     diffMultiplier: 1,
     formMultiplier: 2.8,
@@ -1643,7 +1862,7 @@ function defaultCalibration(evaluated) {
 }
 
 function getPredictionHistorySummary() {
-  const records = Object.values(predictionHistory.matches);
+  const records = Object.values(predictionHistory.matches).map(normalizedEvaluationRecord);
   const evaluated = records.filter((record) => record.evaluation);
   const awaitingResult = records.filter((record) => record.initialPrediction && !record.result);
   const resultWithoutPrediction = records.filter((record) => !record.initialPrediction && record.result);
@@ -1654,10 +1873,16 @@ function getPredictionHistorySummary() {
       acc.winner += record.evaluation.winner ? 1 : 0;
       acc.draw += record.evaluation.draw ? 1 : 0;
       acc.direction += record.evaluation.direction ? 1 : 0;
+      acc.totalGoalError += Number(record.evaluation.totalGoalError || 0);
+      acc.totalGoalsError += Number(record.evaluation.totalGoalsError || 0);
+      acc.expectedGoalError += Number(record.evaluation.expectedGoalError || 0);
       return acc;
     },
-    { exactScore: 0, winner: 0, draw: 0, direction: 0 }
+    { exactScore: 0, winner: 0, draw: 0, direction: 0, totalGoalError: 0, totalGoalsError: 0, expectedGoalError: 0 }
   );
+  summary.averageGoalError = evaluated.length ? Number((summary.totalGoalError / evaluated.length).toFixed(2)) : 0;
+  summary.averageTotalGoalsError = evaluated.length ? Number((summary.totalGoalsError / evaluated.length).toFixed(2)) : 0;
+  summary.averageExpectedGoalError = evaluated.length ? Number((summary.expectedGoalError / evaluated.length).toFixed(2)) : 0;
 
   return {
     total: records.length,
@@ -1665,9 +1890,37 @@ function getPredictionHistorySummary() {
     awaitingResult: awaitingResult.length,
     resultWithoutPrediction: resultWithoutPrediction.length,
     summary,
+    probabilityBuckets: buildProbabilityBuckets(evaluated),
     calibration: modelCalibration(),
     matches: records.sort((a, b) => (a.date || 0) - (b.date || 0)),
   };
+}
+
+function buildProbabilityBuckets(records) {
+  const bucketDefinitions = [
+    { min: 0, max: 49, label: "ate 49%" },
+    { min: 50, max: 59, label: "50-59%" },
+    { min: 60, max: 69, label: "60-69%" },
+    { min: 70, max: 79, label: "70-79%" },
+    { min: 80, max: 100, label: "80%+" },
+  ];
+
+  return bucketDefinitions
+    .map((bucket) => {
+      const matches = records.filter((record) => {
+        const chance = Number(record.initialPrediction?.favoriteChance || record.evaluation?.favoriteChance || 0);
+        return chance >= bucket.min && chance <= bucket.max;
+      });
+      const hits = matches.filter((record) => record.evaluation?.direction).length;
+
+      return {
+        label: bucket.label,
+        total: matches.length,
+        hits,
+        rate: matches.length ? Math.round((hits / matches.length) * 100) : 0,
+      };
+    })
+    .filter((bucket) => bucket.total > 0);
 }
 
 function sendJson(res, status, payload) {
@@ -1742,6 +1995,48 @@ const server = http.createServer(async (req, res) => {
   serveStatic(req, res);
 });
 
-server.listen(PORT, () => {
-  console.log(`Copa app rodando em http://localhost:${PORT}`);
-});
+async function startServer() {
+  await initializePersistence();
+
+  server.listen(PORT, () => {
+    console.log(`Copa app rodando em http://localhost:${PORT}`);
+  });
+
+  return server;
+}
+
+if (require.main === module) {
+  startServer().catch((error) => {
+    console.error(error);
+    process.exitCode = 1;
+  });
+}
+
+module.exports = {
+  attachPredictionSnapshots,
+  buildTeamStrength,
+  createEmptyPredictionHistory,
+  evaluatePrediction,
+  getSeedRank,
+  isFinished,
+  isLiveStatus,
+  isScheduledStatus,
+  modelCalibration,
+  predictMatch,
+  rankingRows,
+  rankingWeight,
+  resultDirection,
+  startServer,
+  _test: {
+    setPredictionHistory(history) {
+      predictionHistory = normalizePredictionHistory(history);
+    },
+    getPredictionHistory() {
+      return predictionHistory;
+    },
+    setPredictionHistoryStore(store) {
+      predictionHistoryStore = store;
+    },
+    updatePredictionHistory,
+  },
+};

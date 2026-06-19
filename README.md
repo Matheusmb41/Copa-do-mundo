@@ -52,4 +52,14 @@ Esse arquivo alimenta o endpoint:
 
 Ele guarda previsoes feitas antes dos jogos e, quando o placar real aparece, calcula acertos de placar exato, direcao do resultado, vencedor e empate.
 
-Para uso definitivo em producao, troque esse arquivo por um banco persistente, como Render Postgres ou Supabase.
+Em producao, configure a variavel `DATABASE_URL` no Render para salvar esse historico em Postgres. Sem essa variavel, o app usa o arquivo local `data/prediction-history.json`.
+
+Variaveis uteis no Render:
+
+```txt
+WORLD_CUP_SEASON=2026
+API_CACHE_MS=120000
+DATABASE_URL=<url do Postgres>
+```
+
+O backend tambem guarda cache das estatisticas individuais da ESPN em `data/espn-summary-cache.json` quando roda localmente. Esse cache reduz chamadas repetidas aos summaries dos jogos.
