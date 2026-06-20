@@ -19,7 +19,7 @@ const fallbackData = {
       fifaRank: 6,
       weight: 78.6,
       form: 1.4,
-      lastMatch: "Dados locais temporarios ate o backend carregar a API.",
+      lastMatch: "Dados locais temporários até o servidor carregar a API.",
     },
     congo: {
       name: "RD Congo",
@@ -27,7 +27,7 @@ const fallbackData = {
       fifaRank: 60,
       weight: 51.9,
       form: 0.5,
-      lastMatch: "Dados locais temporarios ate o backend carregar a API.",
+      lastMatch: "Dados locais temporários até o servidor carregar a API.",
     },
     england: {
       name: "Inglaterra",
@@ -35,15 +35,15 @@ const fallbackData = {
       fifaRank: 4,
       weight: 83.7,
       form: 2.2,
-      lastMatch: "Dados locais temporarios ate o backend carregar a API.",
+      lastMatch: "Dados locais temporários até o servidor carregar a API.",
     },
     croatia: {
-      name: "Croacia",
+      name: "Croácia",
       logo: "",
       fifaRank: 10,
       weight: 70.6,
       form: 0.2,
-      lastMatch: "Dados locais temporarios ate o backend carregar a API.",
+      lastMatch: "Dados locais temporários até o servidor carregar a API.",
     },
   },
   matches: [
@@ -112,7 +112,7 @@ const scoreFor = (match) => {
   return {
     home: match.prediction?.homeGoals ?? "-",
     away: match.prediction?.awayGoals ?? "-",
-    label: "Premonicao",
+    label: "Premonição",
     chance: `${match.prediction?.favoriteChance ?? 0}%`,
     kind: "prediction",
   };
@@ -151,7 +151,7 @@ const matchDisplayDay = (match) => {
   tomorrow.setDate(today.getDate() + 1);
 
   if (sameCalendarDay(date, today)) return "Hoje";
-  if (sameCalendarDay(date, tomorrow)) return "Amanha";
+  if (sameCalendarDay(date, tomorrow)) return "Amanhã";
 
   return new Intl.DateTimeFormat("pt-BR", {
     weekday: "short",
@@ -246,7 +246,7 @@ const renderWeights = () => {
                 <strong>${team.name}</strong>
               </div>
               <span class="weight-value">${team.weight.toFixed(1)}</span>
-              <div class="weight-meta">Ranking FIFA #${team.fifaRank} - base ${formatMetaNumber(team.strength?.base)} - amostra ${Math.round((team.strength?.sampleConfidence || 0) * 100)}% - vs base ${team.weightDelta > 0 ? "+" : ""}${Number(team.weightDelta || 0).toFixed(1)}</div>
+              <div class="weight-meta">Ranking FIFA #${team.fifaRank} - base ${formatMetaNumber(team.strength?.base)} - amostra ${Math.round((team.strength?.sampleConfidence || 0) * 100)}% - contra base ${team.weightDelta > 0 ? "+" : ""}${Number(team.weightDelta || 0).toFixed(1)}</div>
             </article>
           `;
         })
@@ -288,9 +288,9 @@ const teamPlayersContent = (team) => {
       <section class="team-player-panel">
         <header>
           <h3 id="teamPlayersTitle">Jogadores - ${team.name}</h3>
-          <span>Sem estatisticas individuais suficientes ainda</span>
+          <span>Sem estatísticas individuais suficientes ainda</span>
         </header>
-        <p>Assim que a fonte devolver dados individuais dessa selecao, a media dos jogadores aparece aqui.</p>
+        <p>Assim que a fonte devolver dados individuais dessa seleção, a média dos jogadores aparece aqui.</p>
       </section>
     `;
   }
@@ -299,7 +299,7 @@ const teamPlayersContent = (team) => {
     <section class="team-player-panel">
       <header>
         <h3 id="teamPlayersTitle">Jogadores - ${team.name}</h3>
-        <span>Media por jogo e total acumulado</span>
+        <span>Média por jogo e total acumulado</span>
       </header>
       <div class="player-score-list">
         ${players
@@ -309,7 +309,7 @@ const teamPlayersContent = (team) => {
                 <strong>${index + 1}. ${player.name}</strong>
                 <span>${player.games || 0} jogo${player.games === 1 ? "" : "s"}</span>
                 <span>G ${player.goals || 0} / A ${player.assists || 0}</span>
-                <span>Media ${Number(player.average || 0).toFixed(2)}</span>
+                <span>Média ${Number(player.average || 0).toFixed(2)}</span>
                 <span>Total ${Number(player.total || 0).toFixed(2)}</span>
               </article>
             `
@@ -356,11 +356,11 @@ const rankingMovement = (team) => {
       ? `subiu ${team.positionDelta}`
       : team.positionDelta < 0
         ? `caiu ${Math.abs(team.positionDelta)}`
-        : "mesma posicao";
-  const weightLabel = weightDelta ? `peso ${weightDelta > 0 ? "+" : ""}${weightDelta.toFixed(1)}` : "peso estavel";
-  const basisLabel = team.movementBasis === "base-ranking" ? "Base FIFA da Copa" : "Antes do ultimo jogo";
+        : "mesma posição";
+  const weightLabel = weightDelta ? `peso ${weightDelta > 0 ? "+" : ""}${weightDelta.toFixed(1)}` : "peso estável";
+  const basisLabel = team.movementBasis === "base-ranking" ? "Base FIFA da Copa" : "Antes do último jogo";
 
-  return `<small class="rank-move ${direction}" title="${basisLabel}: ${team.previousPosition}o lugar; ${weightLabel}"><span class="rank-arrow">${signal}</span><span class="rank-number">${Math.abs(team.positionDelta)}</span><span class="sr-detail">${positionLabel}; ${weightLabel}</span></small>`;
+  return `<small class="rank-move ${direction}" title="${basisLabel}: ${team.previousPosition}º lugar; ${weightLabel}"><span class="rank-arrow">${signal}</span><span class="rank-number">${Math.abs(team.positionDelta)}</span><span class="sr-detail">${positionLabel}; ${weightLabel}</span></small>`;
 };
 
 const renderGroups = () => {
@@ -371,8 +371,8 @@ const renderGroups = () => {
   if (!groups.length) {
     container.innerHTML = `
       <article class="details-card">
-        <h3>Grupos indisponiveis</h3>
-        <p>A fonte ainda nao retornou jogos com identificacao de grupo.</p>
+        <h3>Grupos indisponíveis</h3>
+        <p>A fonte ainda não retornou jogos com identificação de grupo.</p>
       </article>
     `;
     return;
@@ -437,8 +437,8 @@ const renderPredictionStats = () => {
   if (!predictionHistory) {
     container.innerHTML = `
       <article class="details-card">
-        <h3>Historico carregando</h3>
-        <p>As estatisticas aparecem quando o backend devolver o historico das premonicoes.</p>
+        <h3>Histórico carregando</h3>
+        <p>As estatísticas aparecem quando o servidor devolver o histórico das premonições.</p>
       </article>
     `;
     return;
@@ -455,10 +455,10 @@ const renderPredictionStats = () => {
 
   container.innerHTML = `
     <section class="stats-overview">
-      ${statCard("Premonicoes guardadas", total)}
+      ${statCard("Premonições guardadas", total)}
       ${statCard("Avaliadas", evaluated)}
       ${statCard("Aguardando resultado", awaitingResult)}
-      ${statCard("Erro medio de gols", formatStatDecimal(summary.averageGoalError))}
+      ${statCard("Erro médio de gols", formatStatDecimal(summary.averageGoalError))}
     </section>
     <section class="accuracy-grid">
       ${accuracyCard("Placar exato", summary.exactScore, evaluated)}
@@ -468,8 +468,8 @@ const renderPredictionStats = () => {
     </section>
     ${renderProbabilityBuckets(predictionHistory.probabilityBuckets)}
     <section class="details-card">
-      <h3>Ultimas avaliacoes</h3>
-      ${evaluatedMatches.length ? renderEvaluatedMatches(evaluatedMatches) : "<p>Nenhum jogo com premonicao anterior foi finalizado ainda.</p>"}
+      <h3>Últimas avaliações</h3>
+      ${evaluatedMatches.length ? renderEvaluatedMatches(evaluatedMatches) : "<p>Nenhum jogo com premonição anterior foi finalizado ainda.</p>"}
     </section>
     ${renderCalibration(predictionHistory.calibration)}
   `;
@@ -554,7 +554,7 @@ const renderProbabilityBuckets = (buckets = []) => {
 
   return `
     <section class="details-card probability-buckets">
-      <h3>Calibracao por chance</h3>
+      <h3>Calibração por chance</h3>
       <div class="bucket-list">
         ${buckets
           .map(
@@ -584,18 +584,18 @@ const renderCalibration = (calibration) => {
 
   return `
     <section class="details-card">
-      <h3>Ajuste automatico do modelo</h3>
+      <h3>Ajuste automático do modelo</h3>
       <div class="calibration-grid">
         ${calibrationItem("Jogos avaliados", calibration.evaluated)}
-        ${calibrationItem("Forca da amostra", `${Math.round((calibration.confidenceFactor || 0) * 100)}%`)}
+        ${calibrationItem("Força da amostra", `${Math.round((calibration.confidenceFactor || 0) * 100)}%`)}
         ${calibrationItem("Peso da forma", calibration.formMultiplier)}
         ${calibrationItem("Impacto jogadores", calibration.playerImpactMultiplier)}
         ${calibrationItem("Agressividade", calibration.diffMultiplier)}
         ${calibrationItem("Ajuste de gols", calibration.goalVolumeMultiplier || 1)}
-        ${calibrationItem("Vies de gols", formatSignedDecimal(calibration.goalBias))}
-        ${calibrationItem("Tendencia a empate", calibration.drawBias > 0 ? `+${calibration.drawBias}` : calibration.drawBias)}
+        ${calibrationItem("Viés de gols", formatSignedDecimal(calibration.goalBias))}
+        ${calibrationItem("Tendência a empate", calibration.drawBias > 0 ? `+${calibration.drawBias}` : calibration.drawBias)}
       </div>
-      <p>Esses parametros mudam conforme as premonicoes sao avaliadas. O ajuste de gols usa o erro medio para reduzir ou aumentar levemente o volume dos placares.</p>
+      <p>Esses parâmetros mudam conforme as premonições são avaliadas. O ajuste de gols usa o erro médio para reduzir ou aumentar levemente o volume dos placares.</p>
     </section>
   `;
 };
@@ -630,7 +630,7 @@ const renderEvaluatedMatches = (matches) => `
       .map((match) => `
         <article class="history-row">
           <strong>${match.home} x ${match.away}</strong>
-          <span>Premonicao avaliada: ${predictionForEvaluation(match).homeGoals}-${predictionForEvaluation(match).awayGoals}</span>
+          <span>Premonição avaliada: ${predictionForEvaluation(match).homeGoals}-${predictionForEvaluation(match).awayGoals}</span>
           <span>Placar: ${match.result.homeGoals}-${match.result.awayGoals}</span>
           <small class="${match.evaluation.direction ? "hit" : "miss"}">${match.evaluation.exactScore ? "Placar exato" : match.evaluation.direction ? "Acerto geral" : "Errou"}</small>
         </article>
@@ -659,7 +659,7 @@ const renderMatches = () => {
     container.innerHTML = `
       <article class="details-card match-empty">
         <h3>Nenhum jogo de fase de grupos</h3>
-        <p>A fonte ainda nao retornou os confrontos dessa fase.</p>
+        <p>A fonte ainda não retornou os confrontos dessa fase.</p>
       </article>
     `;
     return;
@@ -703,7 +703,7 @@ const renderMatches = () => {
               </div>
               <footer class="match-footer">
                 <span>${footerStatus}</span>
-                <span class="confidence-bar" title="Confianca da premonicao">
+                <span class="confidence-bar" title="Confiança da premonição">
                   <span style="width: ${match.prediction?.confidence ?? 100}%"></span>
                 </span>
               </footer>
@@ -743,36 +743,36 @@ const renderKnockoutBracket = () => {
   if (!knockoutMatches.length) {
     container.innerHTML = `
       <article class="details-card">
-        <h3>Eliminatorias indisponiveis</h3>
-        <p>A fonte ainda nao retornou os confrontos do mata-mata.</p>
+        <h3>Eliminatórias indisponíveis</h3>
+        <p>A fonte ainda não retornou os confrontos do mata-mata.</p>
       </article>
     `;
     return;
   }
 
   const rounds = groupKnockoutRounds(knockoutMatches);
-  const round32 = rounds.find((round) => round.key === "Round of 32")?.matches || [];
-  const round16 = rounds.find((round) => round.key === "Round of 16")?.matches || [];
-  const quarters = rounds.find((round) => round.key === "Quarterfinal")?.matches || [];
-  const semis = rounds.find((round) => round.key === "Semifinal")?.matches || [];
-  const thirdPlace = rounds.find((round) => round.key === "3rd Place")?.matches?.[0];
+  const round32 = rounds.find((round) => round.key === "round32")?.matches || [];
+  const round16 = rounds.find((round) => round.key === "round16")?.matches || [];
+  const quarters = rounds.find((round) => round.key === "quarterfinal")?.matches || [];
+  const semis = rounds.find((round) => round.key === "semifinal")?.matches || [];
+  const thirdPlace = rounds.find((round) => round.key === "thirdPlace")?.matches?.[0];
   const final = rounds.find((round) => round.key === "Final")?.matches?.[0];
 
   const leftRounds = [
-    { name: "16 avos", matches: round32.slice(0, 8) },
-    { name: "Oitavas", matches: round16.slice(0, 4) },
-    { name: "Quartas", matches: quarters.slice(0, 2) },
+    { name: "16 avos de final", matches: round32.slice(0, 8) },
+    { name: "Oitavas de final", matches: round16.slice(0, 4) },
+    { name: "Quartas de final", matches: quarters.slice(0, 2) },
     { name: "Semifinal", matches: semis.slice(0, 1) },
   ];
   const rightRounds = [
     { name: "Semifinal", matches: semis.slice(1, 2) },
-    { name: "Quartas", matches: quarters.slice(2, 4) },
-    { name: "Oitavas", matches: round16.slice(4, 8) },
-    { name: "16 avos", matches: round32.slice(8, 16) },
+    { name: "Quartas de final", matches: quarters.slice(2, 4) },
+    { name: "Oitavas de final", matches: round16.slice(4, 8) },
+    { name: "16 avos de final", matches: round32.slice(8, 16) },
   ];
 
   container.innerHTML = `
-    <div class="bracket-instructions">Clique em um confronto para ver a premonicao.</div>
+    <div class="bracket-instructions">Clique em um confronto para ver a premonição.</div>
     <div class="bracket-scroll">
       <div class="bracket-board bracket-board-split">
         <div class="bracket-wing left-wing">
@@ -782,7 +782,7 @@ const renderKnockoutBracket = () => {
           <div class="center-main">
             ${final ? renderCenterMatch("Final", final, "final-match") : ""}
           </div>
-          ${thirdPlace ? renderCenterMatch("3o lugar", thirdPlace, "third-place-match") : ""}
+          ${thirdPlace ? renderCenterMatch("3º lugar", thirdPlace, "third-place-match") : ""}
         </div>
         <div class="bracket-wing right-wing">
           ${rightRounds.map((round, index) => renderBracketColumn(round, "right", index)).join("")}
@@ -801,22 +801,21 @@ const renderKnockoutBracket = () => {
 };
 
 const groupKnockoutRounds = (matches) => {
-  const roundOrder = ["Round of 32", "Round of 16", "Quarterfinal", "Semifinal", "3rd Place", "Final"];
-  const roundNames = {
-    "Round of 32": "16 avos",
-    "Round of 16": "Oitavas",
-    Quarterfinal: "Quartas",
-    Semifinal: "Semifinais",
-    "3rd Place": "3o lugar",
-    Final: "Final",
-  };
+  const roundOrder = [
+    { key: "round32", name: "16 avos de final", patterns: ["16 avos de final", "Round of 32"] },
+    { key: "round16", name: "Oitavas de final", patterns: ["Oitavas de final", "Round of 16"] },
+    { key: "quarterfinal", name: "Quartas de final", patterns: ["Quartas de final", "Quarterfinal"] },
+    { key: "semifinal", name: "Semifinais", patterns: ["Semifinal"] },
+    { key: "thirdPlace", name: "3º lugar", patterns: ["Disputa de 3º lugar", "3rd Place"] },
+    { key: "Final", name: "Final", patterns: ["Final"] },
+  ];
 
   return roundOrder
-    .map((key) => {
-      const roundMatches = matches.filter((match) => (match.group || "").includes(key));
+    .map((round) => {
+      const roundMatches = matches.filter((match) => round.patterns.some((pattern) => (match.group || "").includes(pattern)));
       return {
-        key,
-        name: roundNames[key],
+        key: round.key,
+        name: round.name,
         matches: roundMatches.sort((a, b) => a.timestamp - b.timestamp),
       };
     })
@@ -886,7 +885,7 @@ const statRow = (label, homeValue, awayValue, suffix = "") => `
   </div>
 `;
 
-const renderPredictionSnapshotCard = (title, prediction, home, away, emptyText = "Sem snapshot salvo para esse momento.") => {
+const renderPredictionSnapshotCard = (title, prediction, home, away, emptyText = "Sem registro salvo para esse momento.") => {
   if (!prediction) {
     return `
       <article class="details-card prediction-snapshot muted-snapshot">
@@ -929,7 +928,7 @@ const renderDetails = (matchId) => {
     container.innerHTML = `
       <article class="details-card">
         <h3>Nenhum jogo carregado</h3>
-        <p>O backend ainda nao retornou jogos da Copa.</p>
+        <p>O servidor ainda não retornou jogos da Copa.</p>
       </article>
     `;
     return;
@@ -948,8 +947,8 @@ const renderDetails = (matchId) => {
         <h3>${home.name} ${score.home} x ${score.away} ${away.name}</h3>
         <p>${liveIndicator()} <span>${score.label}</span></p>
       </article>
-      ${renderPredictionSnapshotCard("Premonicao inicial", initialPrediction, home, away, "Sem premonicao salva antes do inicio do jogo.")}
-      ${renderPredictionSnapshotCard("Premonicao atual", currentPrediction, home, away)}
+      ${renderPredictionSnapshotCard("Premonição inicial", initialPrediction, home, away, "Sem premonição salva antes do início do jogo.")}
+      ${renderPredictionSnapshotCard("Premonição atual", currentPrediction, home, away)}
       ${renderMatchStats(match)}
       ${renderPredictionFactors(home, away)}
       ${renderPlayerHighlights(home)}
@@ -992,7 +991,7 @@ const renderDetails = (matchId) => {
       </div>
     </article>
     <article class="details-card">
-      <h3>Base da premonicao</h3>
+      <h3>Base da premonição</h3>
       <p><strong>${home.name}:</strong> peso ${home.weight.toFixed(1)} - ${home.lastMatch}</p>
       <p><strong>${away.name}:</strong> peso ${away.weight.toFixed(1)} - ${away.lastMatch}</p>
     </article>
@@ -1010,7 +1009,7 @@ const renderPredictionFactors = (home, away) => {
       home: home.weight,
       away: away.weight,
       suffix: "",
-      note: "Forca final usada na premonicao",
+      note: "Força final usada na premonição",
     },
     {
       label: "Base FIFA",
@@ -1031,7 +1030,7 @@ const renderPredictionFactors = (home, away) => {
       home: homeStrength.attack ?? home.attack ?? 1,
       away: awayStrength.attack ?? away.attack ?? 1,
       suffix: "",
-      note: "Gols, remates, xG quando disponivel e jogadores ofensivos",
+      note: "Gols, chutes, xG quando disponível e jogadores ofensivos",
     },
     {
       label: "Defesa",
@@ -1045,20 +1044,20 @@ const renderPredictionFactors = (home, away) => {
       home: homeStrength.players ?? home.playerImpact ?? 0,
       away: awayStrength.players ?? away.playerImpact ?? 0,
       suffix: "",
-      note: "Media dos principais jogadores e impacto individual",
+      note: "Média dos principais jogadores e impacto individual",
     },
     {
       label: "Adversarios",
       home: homeStrength.opponents ?? 0,
       away: awayStrength.opponents ?? 0,
       suffix: "",
-      note: "Valor extra por desempenho contra selecoes fortes",
+      note: "Valor extra por desempenho contra seleções fortes",
     },
   ];
 
   return `
     <article class="details-card">
-      <h3>Por que essa premonicao?</h3>
+      <h3>Por que essa premonição?</h3>
       <div class="factor-list">
         ${factors.map((factor) => renderFactorRow(factor, home.name, away.name)).join("")}
       </div>
@@ -1108,10 +1107,10 @@ const renderMatchStats = (match) => {
 
   return `
     <article class="details-card">
-      <h3>Estatisticas reais</h3>
+      <h3>Estatísticas reais</h3>
       <div class="match-stats">
-        ${statRow("Remates", homeStats.shots, awayStats.shots)}
-        ${statRow("Remates a baliza", homeStats.shotsOnTarget, awayStats.shotsOnTarget)}
+        ${statRow("Chutes", homeStats.shots, awayStats.shots)}
+        ${statRow("Chutes no gol", homeStats.shotsOnTarget, awayStats.shotsOnTarget)}
         ${statRow("Posse", homeStats.possession, awayStats.possession, "%")}
         ${statRow("Cantos", homeStats.corners, awayStats.corners)}
         ${statRow("Faltas", homeStats.fouls, awayStats.fouls)}
@@ -1156,7 +1155,7 @@ const loadBackendData = async ({ preserveSelection = false, silent = false } = {
     const data = await response.json();
 
     if (!response.ok) {
-      throw new Error(data.message || "Backend nao conseguiu carregar a API.");
+      throw new Error(data.message || "Backend não conseguiu carregar a API.");
     }
 
     appData = data;
@@ -1180,14 +1179,14 @@ const loadBackendData = async ({ preserveSelection = false, silent = false } = {
     appData = fallbackData;
     selectedMatchId = null;
     renderApp();
-    setDataStatus(`${error.message} Usando dados locais temporarios.`, "error");
+    setDataStatus(`${error.message} Usando dados locais temporários.`, "error");
   }
 };
 
 const loadPredictionHistory = async () => {
   try {
     const response = await fetch(endpointFor("/api/prediction-history"));
-    if (!response.ok) throw new Error("Historico indisponivel.");
+    if (!response.ok) throw new Error("Histórico indisponível.");
     predictionHistory = await response.json();
   } catch (error) {
     predictionHistory = {

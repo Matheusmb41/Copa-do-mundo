@@ -81,7 +81,7 @@ test("rankingRows ordena os times mais fortes primeiro", () => {
   );
 });
 
-test("premonicao inicial fica congelada quando o jogo entra ao vivo", async () => {
+test("premonição inicial fica congelada quando o jogo entra ao vivo", async () => {
   resetHistory();
 
   const teams = {
@@ -189,7 +189,7 @@ test("erro medio de gols aumenta volume quando o modelo subestima placares", () 
   assert.ok(calibration.goalBias < 0);
 });
 
-test("seed preenche avaliacao quando ambiente tem historico sem avaliados", () => {
+test("seed preenche avaliacao quando ambiente tem histórico sem avaliados", () => {
   const merged = _test.mergePredictionHistories(
     {
       version: 1,
@@ -267,7 +267,7 @@ test("jogo finalizado sem snapshot anterior ganha avaliacao recuperada", async (
   assert.equal(record.predictionRecovered, true);
 });
 
-test("historico antigo sem premonicao e consertado quando jogo finalizado reaparece", async () => {
+test("histórico antigo sem premonição e consertado quando jogo finalizado reaparece", async () => {
   resetHistory();
   _test.setPredictionHistory({
     version: 1,

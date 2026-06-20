@@ -3,26 +3,26 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Premonicao da Copa</title>
+    <title>Premonição da Copa</title>
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
     <main class="app-shell">
-      <nav class="screen-menu" aria-label="Navegacao principal">
+      <nav class="screen-menu" aria-label="Navegação principal">
         <button class="menu-button active" type="button" data-screen-target="matches">Jogos</button>
         <button class="menu-button" type="button" data-screen-target="groups">Grupos</button>
         <button class="menu-button" type="button" data-screen-target="weights">Ranking dos times</button>
-        <button class="menu-button" type="button" data-screen-target="stats">Estatisticas</button>
+        <button class="menu-button" type="button" data-screen-target="stats">Estatísticas</button>
       </nav>
 
       <section class="scoreboard">
         <section class="screen-view stats-panel" data-screen="stats">
-          <h2>Estatisticas da premonicao</h2>
+          <h2>Estatísticas da premonição</h2>
           <div id="predictionStats" class="prediction-stats"></div>
         </section>
 
         <section class="screen-view groups-panel" data-screen="groups">
-          <h2>Classificacao dos grupos</h2>
+          <h2>Classificação dos grupos</h2>
           <div id="groupsGrid" class="groups-grid"></div>
         </section>
 
@@ -35,13 +35,13 @@
           <section class="data-panel" aria-label="Status dos dados">
             <div>
               <strong>Dados da Copa</strong>
-              <span id="dataStatus">Atualizando pelo backend...</span>
+              <span id="dataStatus">Atualizando pelo servidor...</span>
             </div>
           </section>
 
           <section class="games-submenu" aria-label="Tipo de jogos">
             <button class="subnav-button active" type="button" data-games-view="groups">Fase de grupos</button>
-            <button class="subnav-button" type="button" data-games-view="knockout">Eliminatorias</button>
+            <button class="subnav-button" type="button" data-games-view="knockout">Eliminatórias</button>
           </section>
 
           <div id="groupStageView" class="games-view active">
@@ -54,7 +54,7 @@
         </section>
 
         <aside class="screen-view details-panel" data-screen="details">
-          <h2>Analise de premonicao</h2>
+          <h2>Análise de premonição</h2>
           <div id="predictionDetails" class="prediction-details"></div>
         </aside>
       </section>

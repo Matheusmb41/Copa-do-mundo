@@ -120,57 +120,84 @@ const fifaRankingBase = {
 
 const teamNamePtBr = {
   Argentina: "Argentina",
-  Australia: "Australia",
-  Austria: "Austria",
-  Belgium: "Belgica",
+  Australia: "Austrália",
+  Austria: "Áustria",
+  Belgium: "Bélgica",
   Brazil: "Brasil",
-  Canada: "Canada",
-  Colombia: "Colombia",
-  Croatia: "Croacia",
+  Canada: "Canadá",
+  Colombia: "Colômbia",
+  Croatia: "Croácia",
   Czechia: "Tchequia",
+  "Czech Republic": "Tchequia",
   Denmark: "Dinamarca",
   Ecuador: "Equador",
   Egypt: "Egito",
   England: "Inglaterra",
-  France: "Franca",
+  France: "França",
   Germany: "Alemanha",
   Ghana: "Gana",
-  Iran: "Ira",
+  Iran: "Irã",
   Iraq: "Iraque",
-  Italy: "Italia",
-  Japan: "Japao",
-  Jordan: "Jordania",
-  Mexico: "Mexico",
+  Italy: "Itália",
+  Japan: "Japão",
+  Jordan: "Jordânia",
+  Mexico: "México",
   Morocco: "Marrocos",
-  Netherlands: "Paises Baixos",
-  "New Zealand": "Nova Zelandia",
+  Netherlands: "Países Baixos",
+  "New Zealand": "Nova Zelândia",
   Norway: "Noruega",
-  Panama: "Panama",
+  Panama: "Panamá",
   Paraguay: "Paraguai",
   Portugal: "Portugal",
   Qatar: "Catar",
-  "Saudi Arabia": "Arabia Saudita",
-  Scotland: "Escocia",
+  "Saudi Arabia": "Arábia Saudita",
+  Scotland: "Escócia",
   Senegal: "Senegal",
-  Serbia: "Servia",
-  "South Africa": "Africa do Sul",
+  Serbia: "Sérvia",
+  "South Africa": "África do Sul",
   "South Korea": "Coreia do Sul",
   Spain: "Espanha",
-  Switzerland: "Suica",
-  Sweden: "Suecia",
-  Tunisia: "Tunisia",
+  Switzerland: "Suíça",
+  Sweden: "Suécia",
+  Tunisia: "Tunísia",
   Uruguay: "Uruguai",
   USA: "Estados Unidos",
   "United States": "Estados Unidos",
-  Uzbekistan: "Uzbequistao",
-  "Bosnia and Herzegovina": "Bosnia e Herzegovina",
-  "Bosnia-Herzegovina": "Bosnia e Herzegovina",
+  Uzbekistan: "Uzbequistão",
+  "Bosnia and Herzegovina": "Bósnia e Herzegovina",
+  "Bosnia-Herzegovina": "Bósnia e Herzegovina",
   "Congo DR": "RD Congo",
   "DR Congo": "RD Congo",
+  "RD Congo": "RD Congo",
   "Cape Verde Islands": "Cabo Verde",
+  "Cape Verde": "Cabo Verde",
   "Ivory Coast": "Costa do Marfim",
-  "Republic of Ireland": "Republica da Irlanda",
-  "United Arab Emirates": "Emirados Arabes Unidos",
+  "Republic of Ireland": "República da Irlanda",
+  "United Arab Emirates": "Emirados Árabes Unidos",
+  Algeria: "Argélia",
+  Curacao: "Curaçao",
+  "Curaçao": "Curaçao",
+  "CuraÃ§ao": "Curaçao",
+  Türkiye: "Turquia",
+  Turkiye: "Turquia",
+  "Africa do Sul": "África do Sul",
+  "Arabia Saudita": "Arábia Saudita",
+  Belgica: "Bélgica",
+  "Bosnia e Herzegovina": "Bósnia e Herzegovina",
+  Croacia: "Croácia",
+  Escocia: "Escócia",
+  Franca: "França",
+  Ira: "Irã",
+  Italia: "Itália",
+  Japao: "Japão",
+  Jordania: "Jordânia",
+  "Nova Zelandia": "Nova Zelândia",
+  "Paises Baixos": "Países Baixos",
+  Panama: "Panamá",
+  Suica: "Suíça",
+  Suecia: "Suécia",
+  Tunisia: "Tunísia",
+  Uzbequistao: "Uzbequistão",
 };
 
 const espnFlagCodes = {
@@ -295,7 +322,7 @@ function createPostgresPredictionHistoryStore() {
   try {
     ({ Pool } = require("pg"));
   } catch (error) {
-    throw new Error("DATABASE_URL foi configurado, mas o pacote pg nao esta instalado. Rode npm install antes do deploy.");
+    throw new Error("DATABASE_URL foi configurado, mas o pacote pg não está instalado. Rode npm install antes do deploy.");
   }
 
   const pool = new Pool({
@@ -455,13 +482,49 @@ function getSeedRank(name, fallback = 75) {
 }
 
 function translateTeamName(name) {
-  const winnerGroup = /^Winner Group ([A-Z])$/i.exec(name);
+  const safeName = fixMojibake(name);
+  const winnerGroup = /^Winner Group ([A-Z])$/i.exec(safeName);
   if (winnerGroup) return `Vencedor do Grupo ${winnerGroup[1].toUpperCase()}`;
 
-  const runnerUpGroup = /^Runner-up Group ([A-Z])$/i.exec(name);
-  if (runnerUpGroup) return `2o lugar do Grupo ${runnerUpGroup[1].toUpperCase()}`;
+  const runnerUpGroup = /^Runner-up Group ([A-Z])$/i.exec(safeName);
+  if (runnerUpGroup) return `2º lugar do Grupo ${runnerUpGroup[1].toUpperCase()}`;
 
-  return teamNamePtBr[name] || name;
+  const groupWinner = /^Group ([A-Z]) Winner$/i.exec(safeName);
+  if (groupWinner) return `Vencedor do Grupo ${groupWinner[1].toUpperCase()}`;
+
+  const groupSecond = /^Group ([A-Z]) 2nd Place$/i.exec(safeName);
+  if (groupSecond) return `2º lugar do Grupo ${groupSecond[1].toUpperCase()}`;
+
+  const thirdPlace = /^Third Place Group ([A-Z/]+)$/i.exec(safeName);
+  if (thirdPlace) return `3º colocado dos Grupos ${thirdPlace[1].toUpperCase()}`;
+
+  const round32Winner = /^Round of 32 (\d+) Winner$/i.exec(safeName);
+  if (round32Winner) return `Vencedor do jogo ${round32Winner[1]} dos 16 avos`;
+
+  const round16Winner = /^Round of 16 (\d+) Winner$/i.exec(safeName);
+  if (round16Winner) return `Vencedor do jogo ${round16Winner[1]} das oitavas`;
+
+  const quarterWinner = /^Quarterfinal (\d+) Winner$/i.exec(safeName);
+  if (quarterWinner) return `Vencedor do jogo ${quarterWinner[1]} das quartas`;
+
+  const semifinalWinner = /^Semifinal (\d+) Winner$/i.exec(safeName);
+  if (semifinalWinner) return `Vencedor da semifinal ${semifinalWinner[1]}`;
+
+  const semifinalLoser = /^Semifinal (\d+) Loser$/i.exec(safeName);
+  if (semifinalLoser) return `Perdedor da semifinal ${semifinalLoser[1]}`;
+
+  return teamNamePtBr[safeName] || safeName;
+}
+
+function fixMojibake(value) {
+  const text = String(value || "");
+  if (!/[ÃÂ]/.test(text)) return text;
+
+  try {
+    return Buffer.from(text, "latin1").toString("utf8");
+  } catch (error) {
+    return text;
+  }
 }
 
 function flagCodeForTeam(apiTeam, translatedName) {
@@ -559,10 +622,10 @@ function buildReason(home, away, diff, homeWeight, awayWeight, expectedHome, exp
   const weaker = diff >= 0 ? away : home;
 
   if (Math.abs(diff) < 4) {
-    return `Jogo equilibrado: ${home.name} tem peso ${homeWeight.toFixed(1)} e ${away.name} tem peso ${awayWeight.toFixed(1)}. Os gols esperados ficaram em ${expectedHome.toFixed(2)} x ${expectedAway.toFixed(2)}, entao a premonicao preserva chance relevante de empate.`;
+    return `Jogo equilibrado: ${home.name} tem peso ${homeWeight.toFixed(1)} e ${away.name} tem peso ${awayWeight.toFixed(1)}. Os gols esperados ficaram em ${expectedHome.toFixed(2)} x ${expectedAway.toFixed(2)}, então a premonição preserva chance relevante de empate.`;
   }
 
-  return `${stronger.name} aparece acima por ${gap} pontos de peso contra ${weaker.name}. O modelo combina ranking FIFA, forma na Copa, forca dos adversarios, ataque/defesa e media dos principais jogadores antes de arredondar os gols esperados (${expectedHome.toFixed(2)} x ${expectedAway.toFixed(2)}).`;
+  return `${stronger.name} aparece acima por ${gap} pontos de peso contra ${weaker.name}. O modelo combina ranking FIFA, forma na Copa, força dos adversários, ataque/defesa e média dos principais jogadores antes de arredondar os gols esperados (${expectedHome.toFixed(2)} x ${expectedAway.toFixed(2)}).`;
 }
 
 function isFinished(status) {
@@ -589,7 +652,7 @@ function formatMatchDay(isoDate) {
     a.getDate() === b.getDate();
 
   if (sameDay(date, today)) return "Hoje";
-  if (sameDay(date, tomorrow)) return "Amanha";
+  if (sameDay(date, tomorrow)) return "Amanhã";
 
   return new Intl.DateTimeFormat("pt-BR", {
     weekday: "short",
@@ -613,7 +676,7 @@ function formatMatchTime(isoDate, status) {
 async function apiRequest(pathname) {
   const apiKey = process.env.API_FOOTBALL_KEY;
   if (!apiKey) {
-    throw new Error("API_FOOTBALL_KEY nao configurada no backend.");
+    throw new Error("API_FOOTBALL_KEY não configurada no servidor.");
   }
 
   const response = await fetch(`${API_BASE_URL}${pathname}`, {
@@ -651,7 +714,7 @@ async function findWorldCupLeague(season) {
   const selected = exact || loose;
 
   if (!selected) {
-    throw new Error(`Nao encontrei World Cup na temporada ${season}.`);
+    throw new Error(`Não encontrei a Copa do Mundo na temporada ${season}.`);
   }
 
   return selected.league.id;
@@ -787,7 +850,7 @@ async function buildEspnWorldCupPayload() {
   const events = data.events || [];
 
   if (!events.length) {
-    throw new Error(`ESPN nao retornou jogos para a Copa ${season}.`);
+    throw new Error(`ESPN não retornou jogos para a Copa ${season}.`);
   }
 
   const teams = {};
@@ -856,7 +919,7 @@ async function buildEspnWorldCupPayload() {
     team.weight = currentWeight(team);
     team.lastMatch = played
       ? `${record.points} pts, ${record.wins}-${record.draws}-${record.losses}, saldo ${goalDiff}; impacto jogadores ${team.playerImpact >= 0 ? "+" : ""}${team.playerImpact}.`
-      : "Ainda nao jogou nesta Copa; peso preso ao ranking base.";
+      : "Ainda não jogou nesta Copa; peso preso ao ranking base.";
   });
 
   applyRankingMovement(events, teams);
@@ -935,7 +998,7 @@ function buildTeamSnapshotBeforeEvent(targetEvent, currentTeams, events) {
         attack: 1,
         defense: 1,
         weight: rankingWeight(team.fifaRank),
-        lastMatch: "Premonicao reconstruida com dados anteriores ao jogo.",
+        lastMatch: "Premonição reconstruída com dados anteriores ao jogo.",
         sourceId: team.sourceId || key.replace(/^espn_/, ""),
         placeholder: Boolean(team.placeholder),
         playerImpact: 0,
@@ -1001,7 +1064,7 @@ function ensureSnapshotTeam(snapshotTeams, apiTeam) {
     attack: 1,
     defense: 1,
     weight: rankingWeight(getSeedRank(name, getSeedRank(originalName))),
-    lastMatch: "Premonicao reconstruida com dados anteriores ao jogo.",
+    lastMatch: "Premonição reconstruída com dados anteriores ao jogo.",
     sourceId: String(apiTeam.id),
     placeholder: isPlaceholderTeam(originalName),
     playerImpact: 0,
@@ -1502,8 +1565,8 @@ function playerMetricDelta(metricName, statistics) {
 
 function translateMetricName(metricName) {
   const names = {
-    totalShots: "remates",
-    shotsOnTarget: "remates a baliza",
+    totalShots: "chutes",
+    shotsOnTarget: "chutes no gol",
     expectedGoals: "xG",
     accuratePasses: "passes certos",
     totalPasses: "passes",
@@ -1609,22 +1672,37 @@ function convertEspnEvent(event, teams) {
 }
 
 function displayRoundName(event, competition) {
-  const note = competition.altGameNote || "";
-  if (/Group\s+[A-Z]/i.test(note)) return note;
+  const note = fixMojibake(competition.altGameNote || "");
+  const group = /Group\s+([A-Z])/i.exec(note);
+  if (group) return `Grupo ${group[1].toUpperCase()}`;
 
   const date = new Date(event.date);
   const month = date.getUTCMonth() + 1;
   const day = date.getUTCDate();
 
-  if ((month === 6 && day >= 28) || (month === 7 && day <= 3) || (month === 7 && day === 4 && date.getUTCHours() < 12)) return "Round of 32";
-  if (month === 7 && ((day === 4 && date.getUTCHours() >= 12) || (day >= 5 && day <= 7))) return "Round of 16";
-  if (month === 7 && day >= 9 && day <= 12) return "Quarterfinal";
+  if ((month === 6 && day >= 28) || (month === 7 && day <= 3) || (month === 7 && day === 4 && date.getUTCHours() < 12)) return "16 avos de final";
+  if (month === 7 && ((day === 4 && date.getUTCHours() >= 12) || (day >= 5 && day <= 7))) return "Oitavas de final";
+  if (month === 7 && day >= 9 && day <= 12) return "Quartas de final";
   if (month === 7 && day >= 14 && day <= 15) return "Semifinal";
   if (month === 7 && day === 17) return "Semifinal";
-  if (month === 7 && day === 18) return "3rd Place";
+  if (month === 7 && day === 18) return "Disputa de 3º lugar";
   if (month === 7 && day === 19) return "Final";
 
-  return note || event.season?.slug || "FIFA World Cup";
+  return translateRoundName(note || event.season?.slug || "Copa do Mundo");
+}
+
+function translateRoundName(text) {
+  const safeText = fixMojibake(text);
+  const group = /Group\s+([A-Z])/i.exec(safeText);
+  if (group) return `Grupo ${group[1].toUpperCase()}`;
+  if (/Round of 32/i.test(safeText)) return "16 avos de final";
+  if (/Round of 16/i.test(safeText)) return "Oitavas de final";
+  if (/Quarterfinal/i.test(safeText)) return "Quartas de final";
+  if (/Semifinal/i.test(safeText)) return "Semifinal";
+  if (/3rd Place/i.test(safeText)) return "Disputa de 3º lugar";
+  if (/Final/i.test(safeText)) return "Final";
+  if (/World Cup/i.test(safeText)) return "Copa do Mundo";
+  return safeText;
 }
 
 function buildGroupStandings(matches, teams) {
@@ -1654,9 +1732,9 @@ function buildGroupStandings(matches, teams) {
 }
 
 function extractGroupName(groupText) {
-  const match = /Group\s+([A-Z])/i.exec(groupText || "");
+  const match = /(Group|Grupo)\s+([A-Z])/i.exec(groupText || "");
   if (!match) return null;
-  return `Grupo ${match[1].toUpperCase()}`;
+  return `Grupo ${match[2].toUpperCase()}`;
 }
 
 function ensureStandingTeam(groupTable, teamKey, team) {
@@ -1664,7 +1742,7 @@ function ensureStandingTeam(groupTable, teamKey, team) {
 
   groupTable[teamKey] = {
     teamKey,
-    name: team?.name || "Selecao",
+    name: team?.name || "Seleção",
     logo: team?.logo || "",
     flagCode: team?.flagCode || "",
     played: 0,
@@ -2076,6 +2154,43 @@ function normalizedEvaluationRecord(record) {
   };
 }
 
+function localizePredictionRecord(record) {
+  if (!record) return record;
+
+  return {
+    ...record,
+    group: translateRoundName(record.group),
+    home: translateTeamName(record.home),
+    away: translateTeamName(record.away),
+    initialPrediction: localizePredictionSnapshot(record.initialPrediction),
+    latestPrediction: localizePredictionSnapshot(record.latestPrediction),
+    livePrediction: localizePredictionSnapshot(record.livePrediction),
+    evaluatedPrediction: localizePredictionSnapshot(record.evaluatedPrediction),
+    liveScore: localizeResultSnapshot(record.liveScore),
+    result: localizeResultSnapshot(record.result),
+  };
+}
+
+function localizePredictionSnapshot(snapshot) {
+  if (!snapshot) return snapshot;
+
+  return {
+    ...snapshot,
+    home: translateTeamName(snapshot.home),
+    away: translateTeamName(snapshot.away),
+  };
+}
+
+function localizeResultSnapshot(snapshot) {
+  if (!snapshot) return snapshot;
+
+  return {
+    ...snapshot,
+    home: translateTeamName(snapshot.home),
+    away: translateTeamName(snapshot.away),
+  };
+}
+
 function modelCalibration() {
   const records = Object.values(predictionHistory.matches || {}).map(normalizedEvaluationRecord);
   const evaluated = records.filter((record) => record.evaluation && predictionForEvaluation(record) && record.result);
@@ -2149,7 +2264,7 @@ function defaultCalibration(evaluated) {
 }
 
 function getPredictionHistorySummary() {
-  const records = Object.values(predictionHistory.matches).map(normalizedEvaluationRecord);
+  const records = Object.values(predictionHistory.matches).map(normalizedEvaluationRecord).map(localizePredictionRecord);
   const evaluated = records.filter((record) => record.evaluation);
   const awaitingResult = records.filter((record) => record.initialPrediction && !record.result);
   const resultWithoutPrediction = records.filter((record) => !record.initialPrediction && record.result);
@@ -2185,7 +2300,7 @@ function getPredictionHistorySummary() {
 
 function buildProbabilityBuckets(records) {
   const bucketDefinitions = [
-    { min: 0, max: 49, label: "ate 49%" },
+    { min: 0, max: 49, label: "até 49%" },
     { min: 50, max: 59, label: "50-59%" },
     { min: 60, max: 69, label: "60-69%" },
     { min: 70, max: 79, label: "70-79%" },
@@ -2279,7 +2394,7 @@ const server = http.createServer(async (req, res) => {
     try {
       await buildWorldCupPayload();
     } catch (error) {
-      console.warn(`Historico respondeu com ultimo cache disponivel: ${error.message}`);
+      console.warn(`Histórico respondeu com último cache disponível: ${error.message}`);
     }
 
     sendJson(res, 200, getPredictionHistorySummary());
