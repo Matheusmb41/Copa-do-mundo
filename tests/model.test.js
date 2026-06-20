@@ -27,6 +27,14 @@ test("usa a tabela revisada de ranking FIFA como base unica", () => {
   assert.equal(getSeedRank("Haiti"), 83);
 });
 
+test("horario dos jogos usa o fuso de Portugal", () => {
+  assert.equal(_test.formatMatchTime("2026-06-20T17:00:00Z", { short: "NS" }, "Europe/Lisbon"), "18:00");
+  assert.equal(
+    _test.formatMatchDay("2026-06-20T23:30:00Z", new Date("2026-06-20T12:00:00Z"), "Europe/Lisbon"),
+    "Amanhã"
+  );
+});
+
 test("favorito claro fica acima em chance e placar previsto", () => {
   resetHistory();
 

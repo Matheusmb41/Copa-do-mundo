@@ -4,6 +4,7 @@ let selectedTeamKey = null;
 let predictionHistory = null;
 let gamesView = "groups";
 const DATA_REFRESH_MS = 1000 * 60 * 2;
+const DEFAULT_TIME_ZONE = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
 
 if ("scrollRestoration" in history) {
   history.scrollRestoration = "manual";
@@ -11,6 +12,7 @@ if ("scrollRestoration" in history) {
 
 const fallbackData = {
   source: "fallback",
+  timeZone: DEFAULT_TIME_ZONE,
   updatedAt: new Date().toISOString(),
   teams: {
     portugal: {
@@ -135,10 +137,30 @@ const showScreen = (screenName) => {
   });
 };
 
-const sameCalendarDay = (a, b) =>
-  a.getFullYear() === b.getFullYear() &&
-  a.getMonth() === b.getMonth() &&
-  a.getDate() === b.getDate();
+const appTimeZone = () => Intl.DateTimeFormat().resolvedOptions().timeZone || DEFAULT_TIME_ZONE;
+
+const datePartsInTimeZone = (date, timeZone = appTimeZone()) => {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(date);
+
+  return parts.reduce((acc, part) => {
+    if (part.type !== "literal") acc[part.type] = part.value;
+    return acc;
+  }, {});
+};
+
+const calendarKey = (date, timeZone = appTimeZone()) => {
+  const parts = datePartsInTimeZone(date, timeZone);
+  return `${parts.year}-${parts.month}-${parts.day}`;
+};
+
+const sameCalendarDay = (a, b, timeZone = appTimeZone()) => calendarKey(a, timeZone) === calendarKey(b, timeZone);
+
+const addDays = (date, days) => new Date(date.getTime() + days * 24 * 60 * 60 * 1000);
 
 const matchDate = (match) => (match?.timestamp ? new Date(match.timestamp * 1000) : null);
 
@@ -147,13 +169,14 @@ const matchDisplayDay = (match) => {
   if (!date) return match.day || "";
 
   const today = new Date();
-  const tomorrow = new Date(today);
-  tomorrow.setDate(today.getDate() + 1);
+  const tomorrow = addDays(today, 1);
+  const timeZone = appTimeZone();
 
-  if (sameCalendarDay(date, today)) return "Hoje";
-  if (sameCalendarDay(date, tomorrow)) return "Amanhã";
+  if (sameCalendarDay(date, today, timeZone)) return "Hoje";
+  if (sameCalendarDay(date, tomorrow, timeZone)) return "Amanhã";
 
   return new Intl.DateTimeFormat("pt-BR", {
+    timeZone,
     weekday: "short",
     day: "2-digit",
     month: "2-digit",
@@ -170,6 +193,7 @@ const matchDisplayTime = (match) => {
   if (!date) return match.time || "";
 
   return new Intl.DateTimeFormat("pt-BR", {
+    timeZone: appTimeZone(),
     hour: "2-digit",
     minute: "2-digit",
   }).format(date);
@@ -180,7 +204,8 @@ const currentTargetMatch = () => {
   if (!datedMatches.length) return appData.matches[0];
 
   const now = new Date();
-  const todayMatches = datedMatches.filter((match) => sameCalendarDay(new Date(match.timestamp * 1000), now));
+  const timeZone = appTimeZone();
+  const todayMatches = datedMatches.filter((match) => sameCalendarDay(new Date(match.timestamp * 1000), now, timeZone));
   const liveMatch = todayMatches.find(isLive);
   if (liveMatch) return liveMatch;
 
@@ -190,9 +215,7 @@ const currentTargetMatch = () => {
   const lastTodayMatch = todayMatches[todayMatches.length - 1];
   if (lastTodayMatch) return lastTodayMatch;
 
-  const todayStart = new Date(now);
-  todayStart.setHours(0, 0, 0, 0);
-  const nextMatch = datedMatches.find((match) => new Date(match.timestamp * 1000) >= todayStart);
+  const nextMatch = datedMatches.find((match) => new Date(match.timestamp * 1000) >= now);
 
   return nextMatch || datedMatches[datedMatches.length - 1];
 };

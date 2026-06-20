@@ -15,6 +15,7 @@ const PORT = Number(process.env.PORT || 3000);
 const DEFAULT_SEASON = Number(process.env.WORLD_CUP_SEASON || 2026);
 const CACHE_MS = Number(process.env.API_CACHE_MS || 1000 * 60 * 2);
 const PLAYER_SUMMARY_LIMIT = Number(process.env.PLAYER_SUMMARY_LIMIT || 128);
+const APP_TIME_ZONE = process.env.APP_TIME_ZONE || "Europe/Lisbon";
 const FIFA_RANKING_SOURCE = "Ranking FIFA masculino - base manual revisada em 2026-06-19";
 
 let cache = {
@@ -640,21 +641,37 @@ function isScheduledStatus(status) {
   return !isFinished(status) && !isLiveStatus(status);
 }
 
-function formatMatchDay(isoDate) {
+function datePartsInTimeZone(date, timeZone = APP_TIME_ZONE) {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(date);
+
+  return parts.reduce((acc, part) => {
+    if (part.type !== "literal") acc[part.type] = part.value;
+    return acc;
+  }, {});
+}
+
+function calendarKey(date, timeZone = APP_TIME_ZONE) {
+  const parts = datePartsInTimeZone(date, timeZone);
+  return `${parts.year}-${parts.month}-${parts.day}`;
+}
+
+function addDays(date, days) {
+  return new Date(date.getTime() + days * 24 * 60 * 60 * 1000);
+}
+
+function formatMatchDay(isoDate, now = new Date(), timeZone = APP_TIME_ZONE) {
   const date = new Date(isoDate);
-  const today = new Date();
-  const tomorrow = new Date();
-  tomorrow.setDate(today.getDate() + 1);
 
-  const sameDay = (a, b) =>
-    a.getFullYear() === b.getFullYear() &&
-    a.getMonth() === b.getMonth() &&
-    a.getDate() === b.getDate();
-
-  if (sameDay(date, today)) return "Hoje";
-  if (sameDay(date, tomorrow)) return "Amanhã";
+  if (calendarKey(date, timeZone) === calendarKey(now, timeZone)) return "Hoje";
+  if (calendarKey(date, timeZone) === calendarKey(addDays(now, 1), timeZone)) return "Amanhã";
 
   return new Intl.DateTimeFormat("pt-BR", {
+    timeZone,
     weekday: "short",
     day: "2-digit",
     month: "2-digit",
@@ -663,11 +680,12 @@ function formatMatchDay(isoDate) {
     .replace(".", "");
 }
 
-function formatMatchTime(isoDate, status) {
+function formatMatchTime(isoDate, status, timeZone = APP_TIME_ZONE) {
   if (isFinished(status?.short)) return "Finalizado";
   if (isLiveStatus(status?.short)) return "Ao vivo";
 
   return new Intl.DateTimeFormat("pt-BR", {
+    timeZone,
     hour: "2-digit",
     minute: "2-digit",
   }).format(new Date(isoDate));
@@ -828,6 +846,7 @@ async function buildWorldCupPayload(options = {}) {
   const payload = {
     source: "api-football",
     season,
+    timeZone: APP_TIME_ZONE,
     updatedAt: new Date().toISOString(),
     rankingSource: FIFA_RANKING_SOURCE,
     historyStorage: predictionHistoryStore.name,
@@ -950,6 +969,7 @@ async function buildEspnWorldCupPayload() {
   return {
     source: "espn-public",
     season,
+    timeZone: APP_TIME_ZONE,
     updatedAt: new Date().toISOString(),
     rankingSource: FIFA_RANKING_SOURCE,
     historyStorage: predictionHistoryStore.name,
@@ -2473,5 +2493,7 @@ module.exports = {
     },
     updatePredictionHistory,
     mergePredictionHistories,
+    formatMatchDay,
+    formatMatchTime,
   },
 };
