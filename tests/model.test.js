@@ -225,3 +225,97 @@ test("seed preenche avaliacao quando ambiente tem historico sem avaliados", () =
   assert.equal(merged.matches["1"].initialPrediction.homeGoals, 2);
   assert.equal(merged.matches["2"].initialPrediction.homeGoals, 1);
 });
+
+test("jogo finalizado sem snapshot anterior ganha avaliacao recuperada", async () => {
+  resetHistory();
+
+  const teams = {
+    home: { name: "Marrocos" },
+    away: { name: "Haiti" },
+  };
+
+  await _test.updatePredictionHistory(
+    [
+      {
+        id: 20,
+        status: "FT",
+        group: "Grupo C",
+        timestamp: 2000,
+        home: "home",
+        away: "away",
+        actualScore: { home: 1, away: 0 },
+        backfillPrediction: {
+          homeGoals: 2,
+          awayGoals: 0,
+          expectedGoals: { home: 1.8, away: 0.4 },
+          homeChance: 72,
+          drawChance: 18,
+          awayChance: 10,
+          favoriteChance: 72,
+        },
+      },
+    ],
+    teams
+  );
+
+  const record = _test.getPredictionHistory().matches["20"];
+  assert.equal(record.initialPrediction.homeGoals, 2);
+  assert.equal(record.latestPrediction.homeGoals, 2);
+  assert.equal(record.evaluatedPrediction.homeGoals, 2);
+  assert.equal(record.result.homeGoals, 1);
+  assert.equal(record.evaluation.direction, true);
+  assert.equal(record.predictionRecovered, true);
+});
+
+test("historico antigo sem premonicao e consertado quando jogo finalizado reaparece", async () => {
+  resetHistory();
+  _test.setPredictionHistory({
+    version: 1,
+    matches: {
+      "21": {
+        id: 21,
+        group: "Grupo D",
+        date: 2100,
+        home: "Brasil",
+        away: "Haiti",
+        initialPrediction: null,
+        latestPrediction: null,
+        result: { home: "Brasil", away: "Haiti", homeGoals: 3, awayGoals: 0, winner: "home" },
+        evaluation: null,
+      },
+    },
+  });
+
+  await _test.updatePredictionHistory(
+    [
+      {
+        id: 21,
+        status: "FT",
+        group: "Grupo D",
+        timestamp: 2100,
+        home: "home",
+        away: "away",
+        actualScore: { home: 3, away: 0 },
+        backfillPrediction: {
+          homeGoals: 3,
+          awayGoals: 0,
+          expectedGoals: { home: 2.7, away: 0.5 },
+          homeChance: 78,
+          drawChance: 14,
+          awayChance: 8,
+          favoriteChance: 78,
+        },
+      },
+    ],
+    {
+      home: { name: "Brasil" },
+      away: { name: "Haiti" },
+    }
+  );
+
+  const record = _test.getPredictionHistory().matches["21"];
+  assert.equal(record.initialPrediction.homeGoals, 3);
+  assert.equal(record.evaluatedPrediction.homeGoals, 3);
+  assert.equal(record.evaluation.exactScore, true);
+  assert.equal(record.predictionRecovered, true);
+});

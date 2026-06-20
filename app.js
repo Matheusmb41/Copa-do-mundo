@@ -3,6 +3,7 @@ let selectedMatchId = null;
 let selectedTeamKey = null;
 let predictionHistory = null;
 let gamesView = "groups";
+const DATA_REFRESH_MS = 1000 * 60 * 2;
 
 if ("scrollRestoration" in history) {
   history.scrollRestoration = "manual";
@@ -1143,8 +1144,12 @@ const renderApp = () => {
   renderDetails();
 };
 
-const loadBackendData = async () => {
-  setDataStatus("Atualizando dados reais da Copa...");
+const loadBackendData = async ({ preserveSelection = false, silent = false } = {}) => {
+  const previousSelectedMatchId = selectedMatchId;
+
+  if (!silent) {
+    setDataStatus("Atualizando dados reais da Copa...");
+  }
 
   try {
     const response = await fetch(endpointFor("/api/worldcup"));
@@ -1155,12 +1160,23 @@ const loadBackendData = async () => {
     }
 
     appData = data;
-    selectedMatchId = null;
+    selectedMatchId =
+      preserveSelection && data.matches?.some((match) => String(match.id) === String(previousSelectedMatchId))
+        ? previousSelectedMatchId
+        : null;
     await loadPredictionHistory();
     renderApp();
-    setDataStatus("Dados atualizados.", "ok");
-    requestAnimationFrame(scrollToCurrentMatch);
+
+    if (!silent) {
+      setDataStatus("Dados atualizados.", "ok");
+      requestAnimationFrame(scrollToCurrentMatch);
+    }
   } catch (error) {
+    if (silent) {
+      console.warn(error);
+      return;
+    }
+
     appData = fallbackData;
     selectedMatchId = null;
     renderApp();
@@ -1229,3 +1245,4 @@ document.addEventListener("keydown", (event) => {
 });
 
 loadBackendData();
+setInterval(() => loadBackendData({ preserveSelection: true, silent: true }), DATA_REFRESH_MS);

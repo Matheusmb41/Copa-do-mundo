@@ -13,7 +13,7 @@ const API_BASE_URL = "https://v3.football.api-sports.io";
 const ESPN_BASE_URL = "https://site.api.espn.com/apis/site/v2/sports/soccer/fifa.world";
 const PORT = Number(process.env.PORT || 3000);
 const DEFAULT_SEASON = Number(process.env.WORLD_CUP_SEASON || 2026);
-const CACHE_MS = Number(process.env.API_CACHE_MS || 1000 * 60 * 10);
+const CACHE_MS = Number(process.env.API_CACHE_MS || 1000 * 60 * 2);
 const PLAYER_SUMMARY_LIMIT = Number(process.env.PLAYER_SUMMARY_LIMIT || 128);
 const FIFA_RANKING_SOURCE = "Ranking FIFA masculino - base manual revisada em 2026-06-19";
 
@@ -25,6 +25,8 @@ let cache = {
 let predictionHistory = createEmptyPredictionHistory();
 let predictionHistoryStore = createPredictionHistoryStore();
 let summaryCache = loadSummaryCache();
+let backgroundRefreshTimer = null;
+let backgroundRefreshRunning = false;
 
 const fifaRankingBase = {
   france: 1,
@@ -695,9 +697,10 @@ function applyStandings(teams, standingsResponse) {
   });
 }
 
-async function buildWorldCupPayload() {
+async function buildWorldCupPayload(options = {}) {
+  const { force = false } = options;
   const now = Date.now();
-  if (cache.data && cache.expiresAt > now) {
+  if (!force && cache.data && cache.expiresAt > now) {
     return cache.data;
   }
 
@@ -858,18 +861,28 @@ async function buildEspnWorldCupPayload() {
 
   applyRankingMovement(events, teams);
 
-  Object.values(teams).forEach((team) => {
-    delete team.sourceId;
-  });
-
   const matches = events
     .slice()
     .sort((a, b) => new Date(a.date) - new Date(b.date))
-    .map((event) => convertEspnEvent(event, teams));
+    .map((event) => {
+      const match = convertEspnEvent(event, teams);
+      if (isFinished(match.status) && match.actualScore) {
+        match.backfillPrediction = buildPreMatchPredictionFromEvents(event, teams, events);
+      }
+      return match;
+    });
   const groups = buildGroupStandings(matches, teams);
 
   await updatePredictionHistory(matches, teams);
   attachPredictionSnapshots(matches);
+
+  matches.forEach((match) => {
+    delete match.backfillPrediction;
+  });
+
+  Object.values(teams).forEach((team) => {
+    delete team.sourceId;
+  });
 
   return {
     source: "espn-public",
@@ -882,6 +895,162 @@ async function buildEspnWorldCupPayload() {
     matches,
     groups,
   };
+}
+
+function buildPreMatchPredictionFromEvents(targetEvent, currentTeams, events) {
+  const competition = targetEvent.competitions?.[0];
+  const competitors = competition?.competitors || [];
+  const home = competitors.find((item) => item.homeAway === "home") || competitors[0];
+  const away = competitors.find((item) => item.homeAway === "away") || competitors[1];
+
+  if (!home?.team?.id || !away?.team?.id) return null;
+
+  const snapshotTeams = buildTeamSnapshotBeforeEvent(targetEvent, currentTeams, events);
+  const homeKey = `espn_${home.team.id}`;
+  const awayKey = `espn_${away.team.id}`;
+
+  if (!snapshotTeams[homeKey] || !snapshotTeams[awayKey]) return null;
+
+  return predictMatch(
+    {
+      id: Number(targetEvent.id),
+      home: homeKey,
+      away: awayKey,
+    },
+    snapshotTeams
+  );
+}
+
+function buildTeamSnapshotBeforeEvent(targetEvent, currentTeams, events) {
+  const targetTime = eventTime(targetEvent);
+  const snapshotTeams = Object.fromEntries(
+    Object.entries(currentTeams).map(([key, team]) => [
+      key,
+      {
+        name: team.name,
+        logo: team.logo || "",
+        flagCode: team.flagCode || "",
+        fifaRank: team.fifaRank,
+        form: 0,
+        attack: 1,
+        defense: 1,
+        weight: rankingWeight(team.fifaRank),
+        lastMatch: "Premonicao reconstruida com dados anteriores ao jogo.",
+        sourceId: team.sourceId || key.replace(/^espn_/, ""),
+        placeholder: Boolean(team.placeholder),
+        playerImpact: 0,
+        playerHighlights: [],
+        players: [],
+      },
+    ])
+  );
+  const teamRecords = {};
+  const statTotals = {};
+
+  if (!Number.isFinite(targetTime)) {
+    applySnapshotTeamStrengths(snapshotTeams, teamRecords, statTotals);
+    return snapshotTeams;
+  }
+
+  events
+    .slice()
+    .sort((a, b) => eventTime(a) - eventTime(b))
+    .forEach((event) => {
+      if (event === targetEvent || eventTime(event) >= targetTime) return;
+
+      const competition = event.competitions?.[0];
+      if (!competition?.status?.type?.completed) return;
+
+      const competitors = competition.competitors || [];
+      competitors.forEach((competitor) => {
+        ensureSnapshotTeam(snapshotTeams, competitor.team);
+        ensureTeamRecord(teamRecords, competitor.team.id);
+        ensureStatTotal(statTotals, competitor.team.id);
+      });
+
+      const home = competitors.find((item) => item.homeAway === "home");
+      const away = competitors.find((item) => item.homeAway === "away");
+      if (!home || !away) return;
+
+      const homeScore = Number(home.score);
+      const awayScore = Number(away.score);
+      if (!Number.isFinite(homeScore) || !Number.isFinite(awayScore)) return;
+
+      applyResult(teamRecords, home.team.id, away.team.id, homeScore, awayScore);
+      applyOpponentQuality(teamRecords, home, away);
+      applyCompetitorStats(statTotals, home);
+      applyCompetitorStats(statTotals, away);
+    });
+
+  applySnapshotTeamStrengths(snapshotTeams, teamRecords, statTotals);
+  return snapshotTeams;
+}
+
+function ensureSnapshotTeam(snapshotTeams, apiTeam) {
+  const key = `espn_${apiTeam.id}`;
+  if (snapshotTeams[key]) return;
+
+  const originalName = apiTeam.displayName || apiTeam.name;
+  const name = translateTeamName(originalName);
+  snapshotTeams[key] = {
+    name,
+    logo: apiTeam.logo || "",
+    flagCode: flagCodeForTeam(apiTeam, name),
+    fifaRank: getSeedRank(name, getSeedRank(originalName)),
+    form: 0,
+    attack: 1,
+    defense: 1,
+    weight: rankingWeight(getSeedRank(name, getSeedRank(originalName))),
+    lastMatch: "Premonicao reconstruida com dados anteriores ao jogo.",
+    sourceId: String(apiTeam.id),
+    placeholder: isPlaceholderTeam(originalName),
+    playerImpact: 0,
+    playerHighlights: [],
+    players: [],
+  };
+}
+
+function applySnapshotTeamStrengths(snapshotTeams, teamRecords, statTotals) {
+  Object.values(snapshotTeams).forEach((team) => {
+    const sourceId = team.sourceId;
+    const record = teamRecords[sourceId] || emptyRecord();
+    const stats = statTotals[sourceId] || emptyStats();
+    const played = record.played || 0;
+    const pointsPerGame = played ? record.points / played : 0;
+    const goalDiff = record.goalsFor - record.goalsAgainst;
+    const goalsForPerGame = played ? record.goalsFor / played : 0;
+    const goalsAgainstPerGame = played ? record.goalsAgainst / played : 0;
+    const shotsPerGame = played ? stats.totalShots / played : 0;
+    const shotsOnTargetPerGame = played ? stats.shotsOnTarget / played : 0;
+    const possession = stats.possessionSamples ? stats.possessionTotal / stats.possessionSamples : 50;
+    const opponentStrength = record.opponentSamples ? record.opponentRankWeightTotal / record.opponentSamples : rankingWeight(75);
+
+    team.form = Number((pointsPerGame * 0.85 + goalDiff * 0.22 + shotsOnTargetPerGame * 0.08).toFixed(2));
+    team.attack = Number((1 + record.goalsFor * 0.035 + shotsPerGame * 0.006).toFixed(2));
+    team.defense = Number((1 - record.goalsAgainst * 0.035 + (possession - 50) * 0.002).toFixed(2));
+    team.playerImpact = 0;
+    team.playerHighlights = [];
+    team.players = [];
+    team.strength = buildTeamStrength(team, {
+      base: rankingWeight(team.fifaRank),
+      played,
+      pointsPerGame,
+      goalDiff,
+      goalsForPerGame,
+      goalsAgainstPerGame,
+      shotsPerGame,
+      shotsOnTargetPerGame,
+      possession,
+      opponentStrength,
+      topPlayerAverage: 6,
+    });
+    team.weight = currentWeight(team);
+  });
+}
+
+function eventTime(event) {
+  const time = new Date(event.date).getTime();
+  return Number.isFinite(time) ? time : Number.NaN;
 }
 
 function ensureEspnTeam(teams, apiTeam) {
@@ -1683,23 +1852,30 @@ async function updatePredictionHistory(matches, teams) {
     }
 
     if (isFinished(match.status) && match.actualScore) {
+      const recoveredPrediction = recoveredPredictionSnapshot(match, teams);
       if (!existing) {
-        predictionHistory.matches[key] = createResultOnlyRecord(match, teams);
+        predictionHistory.matches[key] = createResultOnlyRecord(match, teams, recoveredPrediction);
         changed = true;
       } else if (!existing.result) {
         existing.result = snapshotResult(match, teams);
-        existing.evaluatedPrediction = predictionForEvaluation(existing);
-        existing.evaluation = evaluatePrediction(existing.evaluatedPrediction, match.actualScore);
+        const evaluated = ensureEvaluatedPrediction(existing, recoveredPrediction);
+        existing.evaluation = evaluatePrediction(evaluated.prediction, match.actualScore);
         existing.completedAt = new Date().toISOString();
         changed = true;
-      } else if (predictionForEvaluation(existing) && !existing.evaluation) {
-        existing.evaluatedPrediction = predictionForEvaluation(existing);
-        existing.evaluation = evaluatePrediction(existing.evaluatedPrediction, {
-          home: existing.result.homeGoals,
-          away: existing.result.awayGoals,
-        });
-        existing.completedAt = existing.completedAt || new Date().toISOString();
-        changed = true;
+      } else {
+        const evaluated = ensureEvaluatedPrediction(existing, recoveredPrediction);
+        if (evaluated.changed) {
+          changed = true;
+        }
+
+        if (evaluated.prediction && !existing.evaluation) {
+          existing.evaluation = evaluatePrediction(evaluated.prediction, {
+            home: existing.result.homeGoals,
+            away: existing.result.awayGoals,
+          });
+          existing.completedAt = existing.completedAt || new Date().toISOString();
+          changed = true;
+        }
       }
     }
   });
@@ -1725,17 +1901,19 @@ function createPredictionRecord(match, teams) {
   };
 }
 
-function createResultOnlyRecord(match, teams) {
+function createResultOnlyRecord(match, teams, recoveredPrediction = null) {
   return {
     id: match.id,
     group: match.group,
     date: match.timestamp,
     home: teams[match.home]?.name,
     away: teams[match.away]?.name,
-    initialPrediction: null,
-    latestPrediction: null,
+    initialPrediction: recoveredPrediction,
+    latestPrediction: recoveredPrediction,
+    evaluatedPrediction: recoveredPrediction,
     result: snapshotResult(match, teams),
-    evaluation: null,
+    evaluation: recoveredPrediction ? evaluatePrediction(recoveredPrediction, match.actualScore) : null,
+    predictionRecovered: Boolean(recoveredPrediction),
     createdAt: new Date().toISOString(),
     completedAt: new Date().toISOString(),
   };
@@ -1771,18 +1949,58 @@ function attachPredictionSnapshots(matches) {
   });
 }
 
-function snapshotPrediction(match, teams) {
+function recoveredPredictionSnapshot(match, teams) {
+  const snapshot = snapshotPrediction(match, teams, match.backfillPrediction);
+  if (!snapshot) return null;
+
+  return {
+    ...snapshot,
+    recovered: true,
+  };
+}
+
+function ensureEvaluatedPrediction(record, fallbackPrediction) {
+  let changed = false;
+  let prediction = predictionForEvaluation(record);
+
+  if (!prediction && fallbackPrediction) {
+    prediction = fallbackPrediction;
+
+    if (!record.initialPrediction) {
+      record.initialPrediction = fallbackPrediction;
+      changed = true;
+    }
+
+    if (!record.latestPrediction) {
+      record.latestPrediction = fallbackPrediction;
+      changed = true;
+    }
+
+    record.predictionRecovered = true;
+  }
+
+  if (prediction && !record.evaluatedPrediction) {
+    record.evaluatedPrediction = prediction;
+    changed = true;
+  }
+
+  return { prediction: record.evaluatedPrediction || prediction || null, changed };
+}
+
+function snapshotPrediction(match, teams, prediction = match.prediction) {
+  if (!prediction) return null;
+
   return {
     home: teams[match.home]?.name,
     away: teams[match.away]?.name,
-    homeGoals: match.prediction.homeGoals,
-    awayGoals: match.prediction.awayGoals,
-    expectedGoals: match.prediction.expectedGoals,
-    homeChance: match.prediction.homeChance,
-    drawChance: match.prediction.drawChance,
-    awayChance: match.prediction.awayChance,
-    favoriteChance: match.prediction.favoriteChance,
-    winner: resultDirection(match.prediction.homeGoals, match.prediction.awayGoals),
+    homeGoals: prediction.homeGoals,
+    awayGoals: prediction.awayGoals,
+    expectedGoals: prediction.expectedGoals,
+    homeChance: prediction.homeChance,
+    drawChance: prediction.drawChance,
+    awayChance: prediction.awayChance,
+    favoriteChance: prediction.favoriteChance,
+    winner: resultDirection(prediction.homeGoals, prediction.awayGoals),
     capturedAt: new Date().toISOString(),
   };
 }
@@ -2058,6 +2276,12 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (url.pathname === "/api/prediction-history") {
+    try {
+      await buildWorldCupPayload();
+    } catch (error) {
+      console.warn(`Historico respondeu com ultimo cache disponivel: ${error.message}`);
+    }
+
     sendJson(res, 200, getPredictionHistorySummary());
     return;
   }
@@ -2072,7 +2296,32 @@ async function startServer() {
     console.log(`Copa app rodando em http://localhost:${PORT}`);
   });
 
+  scheduleBackgroundRefresh();
   return server;
+}
+
+function scheduleBackgroundRefresh() {
+  if (backgroundRefreshTimer || process.env.BACKGROUND_REFRESH === "false") return;
+
+  backgroundRefreshTimer = setInterval(refreshWorldCupDataInBackground, CACHE_MS);
+  if (typeof backgroundRefreshTimer.unref === "function") {
+    backgroundRefreshTimer.unref();
+  }
+
+  refreshWorldCupDataInBackground();
+}
+
+async function refreshWorldCupDataInBackground() {
+  if (backgroundRefreshRunning) return;
+
+  backgroundRefreshRunning = true;
+  try {
+    await buildWorldCupPayload({ force: true });
+  } catch (error) {
+    console.warn(`Falha ao atualizar dados em segundo plano: ${error.message}`);
+  } finally {
+    backgroundRefreshRunning = false;
+  }
 }
 
 if (require.main === module) {
