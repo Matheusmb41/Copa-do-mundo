@@ -956,6 +956,167 @@ body.modal-open {
   line-height: 1.55;
 }
 
+.round32-simulation {
+  display: grid;
+  gap: 14px;
+  padding: 18px 24px 8px;
+}
+
+.simulation-head {
+  display: grid;
+  gap: 12px;
+}
+
+.simulation-head h3,
+.champion-simulation h3,
+.third-place-simulation h3 {
+  margin: 0;
+  font-size: 15px;
+}
+
+.simulation-kpis {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.simulation-kpi,
+.champion-simulation,
+.qualification-card,
+.third-place-simulation {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #1a1d23;
+}
+
+.simulation-kpi {
+  padding: 12px;
+}
+
+.simulation-kpi strong {
+  display: block;
+  font-size: 20px;
+}
+
+.simulation-kpi span {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.simulation-metrics {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.simulation-metrics span {
+  min-width: 0;
+  padding: 8px;
+  border: 1px solid rgb(91 157 255 / 32%);
+  border-radius: 6px;
+  background: rgb(91 157 255 / 12%);
+  color: #cfe0ff;
+  font-size: 11px;
+  font-weight: 700;
+  text-align: center;
+}
+
+.qualification-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.champion-simulation,
+.qualification-card,
+.third-place-simulation {
+  overflow: hidden;
+}
+
+.champion-simulation h3,
+.qualification-card h3,
+.third-place-simulation h3 {
+  padding: 12px;
+  border-bottom: 1px solid var(--line);
+}
+
+.qualification-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11px;
+}
+
+.qualification-table th,
+.qualification-table td {
+  padding: 8px 7px;
+  border-bottom: 1px solid var(--line);
+  text-align: center;
+}
+
+.qualification-table th {
+  color: var(--muted);
+}
+
+.qualification-table th:first-child,
+.qualification-table td:first-child {
+  text-align: left;
+}
+
+.qualification-table tr:last-child td {
+  border-bottom: 0;
+}
+
+.qualification-team {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 150px;
+}
+
+.qualification-team > span:last-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.qualification-table tr.direct {
+  background: rgb(97 217 118 / 7%);
+}
+
+.qualification-table tr.third {
+  background: rgb(91 157 255 / 7%);
+}
+
+.qualification-table tr.out {
+  color: var(--muted);
+}
+
+.qualification-pill {
+  display: inline-flex;
+  min-width: 58px;
+  justify-content: center;
+  padding: 4px 6px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.qualification-pill.direct {
+  background: rgb(97 217 118 / 18%);
+  color: var(--green);
+}
+
+.qualification-pill.third {
+  background: rgb(91 157 255 / 18%);
+  color: #9fc4ff;
+}
+
+.qualification-pill.out {
+  background: rgb(255 255 255 / 7%);
+  color: var(--muted);
+}
+
 .bracket-instructions {
   padding: 14px 24px;
   color: var(--green);
@@ -1025,6 +1186,10 @@ body.modal-open {
   background: var(--panel-soft);
 }
 
+.bracket-match.projected {
+  border-color: rgb(91 157 255 / 35%);
+}
+
 .bracket-match.left::after,
 .bracket-match.right::after {
   content: "";
@@ -1088,6 +1253,10 @@ body.modal-open {
   align-items: center;
   min-width: 0;
   font-size: 12px;
+}
+
+.bracket-team.projected strong {
+  color: #9fc4ff;
 }
 
 .bracket-match.right .bracket-team {
@@ -1229,6 +1398,25 @@ body.modal-open {
 
   .groups-grid {
     grid-template-columns: 1fr;
+  }
+
+  .round32-simulation {
+    padding: 12px 10px 6px;
+  }
+
+  .simulation-kpis,
+  .qualification-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .simulation-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .champion-simulation,
+  .qualification-card,
+  .third-place-simulation {
+    overflow-x: auto;
   }
 
   .group-card {
