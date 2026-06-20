@@ -445,7 +445,7 @@ const renderPredictionStats = () => {
   const { total, awaitingResult, resultWithoutPrediction, matches } = predictionHistory;
   const historyMatches = (matches || []).map(normalizeHistoryEvaluation);
   const allEvaluatedMatches = historyMatches
-    .filter((match) => match.evaluation && match.initialPrediction && match.result)
+    .filter((match) => match.evaluation && predictionForEvaluation(match) && match.result)
     .sort((a, b) => (b.date || 0) - (a.date || 0));
   const evaluatedMatches = allEvaluatedMatches.slice(0, 8);
   const evaluated = allEvaluatedMatches.length || predictionHistory.evaluated || 0;
@@ -474,16 +474,20 @@ const renderPredictionStats = () => {
 };
 
 const normalizeHistoryEvaluation = (match) => {
-  if (!match.initialPrediction || !match.result) return match;
+  const evaluatedPrediction = predictionForEvaluation(match);
+  if (!evaluatedPrediction || !match.result) return match;
 
   return {
     ...match,
+    evaluatedPrediction,
     evaluation: {
-      ...evaluateHistoryPrediction(match.initialPrediction, match.result),
+      ...evaluateHistoryPrediction(evaluatedPrediction, match.result),
       ...(match.evaluation || {}),
     },
   };
 };
+
+const predictionForEvaluation = (match) => match?.evaluatedPrediction || match?.latestPrediction || match?.initialPrediction || null;
 
 const historyDirection = (homeGoals, awayGoals) => {
   if (homeGoals > awayGoals) return "home";
@@ -624,7 +628,7 @@ const renderEvaluatedMatches = (matches) => `
       .map((match) => `
         <article class="history-row">
           <strong>${match.home} x ${match.away}</strong>
-          <span>Premonicao: ${match.initialPrediction.homeGoals}-${match.initialPrediction.awayGoals}</span>
+          <span>Premonicao avaliada: ${predictionForEvaluation(match).homeGoals}-${predictionForEvaluation(match).awayGoals}</span>
           <span>Placar: ${match.result.homeGoals}-${match.result.awayGoals}</span>
           <small class="${match.evaluation.direction ? "hit" : "miss"}">${match.evaluation.exactScore ? "Placar exato" : match.evaluation.direction ? "Acerto geral" : "Errou"}</small>
         </article>

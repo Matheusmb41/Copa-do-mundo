@@ -255,6 +255,84 @@
       "updatedAt": "2026-06-19T20:22:13.007Z",
       "completedAt": "2026-06-19T21:11:46.202Z"
     },
+    "760444": {
+      "id": 760444,
+      "group": "FIFA World Cup, Group C",
+      "date": 1781915400,
+      "home": "Brasil",
+      "away": "Haiti",
+      "initialPrediction": {
+        "home": "Brasil",
+        "away": "Haiti",
+        "homeGoals": 3,
+        "awayGoals": 0,
+        "expectedGoals": {
+          "home": 2.78,
+          "away": 0.16
+        },
+        "homeChance": 83,
+        "drawChance": 10,
+        "awayChance": 7,
+        "favoriteChance": 83,
+        "winner": "home",
+        "capturedAt": "2026-06-19T21:11:46.202Z"
+      },
+      "latestPrediction": {
+        "home": "Brasil",
+        "away": "Haiti",
+        "homeGoals": 3,
+        "awayGoals": 0,
+        "expectedGoals": {
+          "home": 2.78,
+          "away": 0.16
+        },
+        "homeChance": 83,
+        "drawChance": 10,
+        "awayChance": 7,
+        "favoriteChance": 83,
+        "winner": "home",
+        "capturedAt": "2026-06-19T21:11:46.202Z"
+      },
+      "result": {
+        "home": "Brasil",
+        "away": "Haiti",
+        "homeGoals": 3,
+        "awayGoals": 0,
+        "winner": "home"
+      },
+      "evaluatedPrediction": {
+        "home": "Brasil",
+        "away": "Haiti",
+        "homeGoals": 3,
+        "awayGoals": 0,
+        "expectedGoals": {
+          "home": 2.78,
+          "away": 0.16
+        },
+        "homeChance": 83,
+        "drawChance": 10,
+        "awayChance": 7,
+        "favoriteChance": 83,
+        "winner": "home",
+        "capturedAt": "2026-06-19T21:11:46.202Z"
+      },
+      "evaluation": {
+        "exactScore": true,
+        "winner": true,
+        "draw": false,
+        "loser": true,
+        "direction": true,
+        "homeGoalError": 0,
+        "awayGoalError": 0,
+        "totalGoalError": 0,
+        "totalGoalsError": 0,
+        "expectedGoalError": 0.38,
+        "favoriteChance": 83
+      },
+      "createdAt": "2026-06-19T21:11:46.202Z",
+      "updatedAt": "2026-06-19T21:11:46.202Z",
+      "completedAt": "2026-06-20T02:59:20.212Z"
+    },
     "760445": {
       "id": 760445,
       "group": "FIFA World Cup, Group C",
@@ -296,18 +374,34 @@
         "awayGoals": 1,
         "winner": "away"
       },
+      "evaluatedPrediction": {
+        "home": "Escocia",
+        "away": "Marrocos",
+        "homeGoals": 0,
+        "awayGoals": 2,
+        "expectedGoals": {
+          "home": 0.21,
+          "away": 2.04
+        },
+        "homeChance": 14,
+        "drawChance": 13,
+        "awayChance": 73,
+        "favoriteChance": 73,
+        "winner": "away",
+        "capturedAt": "2026-06-19T21:11:46.202Z"
+      },
       "evaluation": {
         "exactScore": false,
-        "winner": false,
+        "winner": true,
         "draw": false,
-        "loser": false,
-        "direction": false,
-        "homeGoalError": 2,
-        "awayGoalError": 0,
-        "totalGoalError": 2,
-        "totalGoalsError": 2,
+        "loser": true,
+        "direction": true,
+        "homeGoalError": 0,
+        "awayGoalError": 1,
+        "totalGoalError": 1,
+        "totalGoalsError": 1,
         "expectedGoalError": null,
-        "favoriteChance": 43
+        "favoriteChance": 73
       },
       "createdAt": "2026-06-18T16:18:20.367Z",
       "updatedAt": "2026-06-19T21:11:46.202Z",

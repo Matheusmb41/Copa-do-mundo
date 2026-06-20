@@ -271,7 +271,7 @@ function createFilePredictionHistoryStore() {
       }
 
       try {
-        const parsed = JSON.parse(fs.readFileSync(HISTORY_FILE, "utf8"));
+        const parsed = readJsonFile(HISTORY_FILE);
         return mergePredictionHistories(seed, normalizePredictionHistory(parsed));
       } catch (error) {
         return seed;
@@ -365,11 +365,15 @@ function loadPredictionHistorySeed() {
   }
 
   try {
-    const parsed = JSON.parse(fs.readFileSync(HISTORY_SEED_FILE, "utf8"));
+    const parsed = readJsonFile(HISTORY_SEED_FILE);
     return normalizePredictionHistory(parsed);
   } catch (error) {
     return createEmptyPredictionHistory();
   }
+}
+
+function readJsonFile(filePath) {
+  return JSON.parse(fs.readFileSync(filePath, "utf8").replace(/^\uFEFF/, ""));
 }
 
 function mergePredictionHistories(seedHistory, storedHistory) {
@@ -1678,11 +1682,13 @@ async function updatePredictionHistory(matches, teams) {
         changed = true;
       } else if (!existing.result) {
         existing.result = snapshotResult(match, teams);
-        existing.evaluation = evaluatePrediction(existing.initialPrediction, match.actualScore);
+        existing.evaluatedPrediction = predictionForEvaluation(existing);
+        existing.evaluation = evaluatePrediction(existing.evaluatedPrediction, match.actualScore);
         existing.completedAt = new Date().toISOString();
         changed = true;
-      } else if (existing.initialPrediction && !existing.evaluation) {
-        existing.evaluation = evaluatePrediction(existing.initialPrediction, {
+      } else if (predictionForEvaluation(existing) && !existing.evaluation) {
+        existing.evaluatedPrediction = predictionForEvaluation(existing);
+        existing.evaluation = evaluatePrediction(existing.evaluatedPrediction, {
           home: existing.result.homeGoals,
           away: existing.result.awayGoals,
         });
@@ -1823,16 +1829,22 @@ function evaluatePrediction(prediction, actualScore) {
   };
 }
 
-function normalizedEvaluationRecord(record) {
-  if (!record?.initialPrediction || !record?.result) return record;
+function predictionForEvaluation(record) {
+  return record?.evaluatedPrediction || record?.latestPrediction || record?.initialPrediction || null;
+}
 
-  const computed = evaluatePrediction(record.initialPrediction, {
+function normalizedEvaluationRecord(record) {
+  const evaluatedPrediction = predictionForEvaluation(record);
+  if (!evaluatedPrediction || !record?.result) return record;
+
+  const computed = evaluatePrediction(evaluatedPrediction, {
     home: record.result.homeGoals,
     away: record.result.awayGoals,
   });
 
   return {
     ...record,
+    evaluatedPrediction,
     evaluation: {
       ...computed,
       ...(record.evaluation || {}),
@@ -1842,7 +1854,7 @@ function normalizedEvaluationRecord(record) {
 
 function modelCalibration() {
   const records = Object.values(predictionHistory.matches || {}).map(normalizedEvaluationRecord);
-  const evaluated = records.filter((record) => record.evaluation && record.initialPrediction && record.result);
+  const evaluated = records.filter((record) => record.evaluation && predictionForEvaluation(record) && record.result);
   const total = evaluated.length;
 
   if (!total) {
@@ -1850,7 +1862,7 @@ function modelCalibration() {
   }
 
   const actualDraws = evaluated.filter((record) => record.result.winner === "draw").length;
-  const predictedDraws = evaluated.filter((record) => record.initialPrediction.winner === "draw").length;
+  const predictedDraws = evaluated.filter((record) => predictionForEvaluation(record).winner === "draw").length;
   const directionHits = evaluated.filter((record) => record.evaluation.direction).length;
   const exactHits = evaluated.filter((record) => record.evaluation.exactScore).length;
   const confidenceFactor = clamp(total / 12, 0.15, 1);
@@ -1859,7 +1871,8 @@ function modelCalibration() {
   const drawGap = (actualDraws - predictedDraws) / total;
   const goalStats = evaluated.reduce(
     (acc, record) => {
-      const predictedTotal = Number(record.initialPrediction.homeGoals || 0) + Number(record.initialPrediction.awayGoals || 0);
+      const prediction = predictionForEvaluation(record);
+      const predictedTotal = Number(prediction.homeGoals || 0) + Number(prediction.awayGoals || 0);
       const actualTotal = Number(record.result.homeGoals || 0) + Number(record.result.awayGoals || 0);
 
       acc.totalGoalError += Number(record.evaluation.totalGoalError || Math.abs(predictedTotal - actualTotal));
@@ -1958,7 +1971,8 @@ function buildProbabilityBuckets(records) {
   return bucketDefinitions
     .map((bucket) => {
       const matches = records.filter((record) => {
-        const chance = Number(record.initialPrediction?.favoriteChance || record.evaluation?.favoriteChance || 0);
+        const prediction = predictionForEvaluation(record);
+        const chance = Number(prediction?.favoriteChance || record.evaluation?.favoriteChance || 0);
         return chance >= bucket.min && chance <= bucket.max;
       });
       const hits = matches.filter((record) => record.evaluation?.direction).length;
