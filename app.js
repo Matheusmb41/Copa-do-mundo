@@ -408,10 +408,12 @@ const renderGroups = () => {
       const rows = group.teams
         .map((team) => `
           <tr>
-            <td class="team-cell">
-              <span class="standing-position">${team.position}</span>
-              ${teamMark(team)}
-              <span>${team.name}</span>
+            <td>
+              <div class="team-cell">
+                <span class="standing-position">${team.position}</span>
+                ${teamMark(team)}
+                <span>${team.name}</span>
+              </div>
             </td>
             <td>${team.played}</td>
             <td>${team.wins}</td>
@@ -1182,10 +1184,12 @@ const renderChampionSimulation = (teams) => `
           .map(
             (team, index) => `
               <tr class="${index === 0 ? "direct" : ""}">
-                <td class="qualification-team">
-                  <span class="standing-position">${index + 1}</span>
-                  ${teamMark(team)}
-                  <span>${team.name}</span>
+                <td>
+                  <div class="qualification-team">
+                    <span class="standing-position">${index + 1}</span>
+                    ${teamMark(team)}
+                    <span>${team.name}</span>
+                  </div>
                 </td>
                 <td><strong>${team.probabilities.champion || 0}%</strong></td>
                 <td>${team.probabilities.final || 0}%</td>
@@ -1226,10 +1230,12 @@ const renderQualificationRow = (team) => {
 
   return `
     <tr class="${slotClass}">
-      <td class="qualification-team">
-        <span class="standing-position">${team.projectedPosition}</span>
-        ${teamMark(team)}
-        <span>${team.name}</span>
+      <td>
+        <div class="qualification-team">
+          <span class="standing-position">${team.projectedPosition}</span>
+          ${teamMark(team)}
+          <span>${team.name}</span>
+        </div>
       </td>
       <td>${team.points}</td>
       <td>${team.goalDifference}</td>
@@ -1259,10 +1265,12 @@ const renderThirdPlaceSimulation = (thirdRows) => `
           .map(
             (team) => `
               <tr class="${team.projectedThirdQualified ? "third" : "out"}">
-                <td class="qualification-team">
-                  <span class="standing-position">${team.thirdPlaceRank}</span>
-                  ${teamMark(team)}
-                  <span>${team.name}</span>
+                <td>
+                  <div class="qualification-team">
+                    <span class="standing-position">${team.thirdPlaceRank}</span>
+                    ${teamMark(team)}
+                    <span>${team.name}</span>
+                  </div>
                 </td>
                 <td>${team.groupName.replace("Grupo ", "")}</td>
                 <td>${team.points}</td>
