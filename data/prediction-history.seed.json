@@ -254,6 +254,64 @@
       "createdAt": "2026-06-18T16:18:20.367Z",
       "updatedAt": "2026-06-19T20:22:13.007Z",
       "completedAt": "2026-06-19T21:11:46.202Z"
+    },
+    "760445": {
+      "id": 760445,
+      "group": "FIFA World Cup, Group C",
+      "date": 1781906400,
+      "home": "Escocia",
+      "away": "Marrocos",
+      "initialPrediction": {
+        "home": "Escocia",
+        "away": "Marrocos",
+        "homeGoals": 2,
+        "awayGoals": 1,
+        "homeChance": 43,
+        "drawChance": 25,
+        "awayChance": 33,
+        "favoriteChance": 43,
+        "winner": "home",
+        "capturedAt": "2026-06-18T16:18:20.367Z"
+      },
+      "latestPrediction": {
+        "home": "Escocia",
+        "away": "Marrocos",
+        "homeGoals": 0,
+        "awayGoals": 2,
+        "expectedGoals": {
+          "home": 0.21,
+          "away": 2.04
+        },
+        "homeChance": 14,
+        "drawChance": 13,
+        "awayChance": 73,
+        "favoriteChance": 73,
+        "winner": "away",
+        "capturedAt": "2026-06-19T21:11:46.202Z"
+      },
+      "result": {
+        "home": "Escocia",
+        "away": "Marrocos",
+        "homeGoals": 0,
+        "awayGoals": 1,
+        "winner": "away"
+      },
+      "evaluation": {
+        "exactScore": false,
+        "winner": false,
+        "draw": false,
+        "loser": false,
+        "direction": false,
+        "homeGoalError": 2,
+        "awayGoalError": 0,
+        "totalGoalError": 2,
+        "totalGoalsError": 2,
+        "expectedGoalError": null,
+        "favoriteChance": 43
+      },
+      "createdAt": "2026-06-18T16:18:20.367Z",
+      "updatedAt": "2026-06-19T21:11:46.202Z",
+      "completedAt": "2026-06-20T00:11:28.645Z"
     }
   }
 }
