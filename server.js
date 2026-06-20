@@ -14,7 +14,7 @@ const ESPN_BASE_URL = "https://site.api.espn.com/apis/site/v2/sports/soccer/fifa
 const PORT = Number(process.env.PORT || 3000);
 const DEFAULT_SEASON = Number(process.env.WORLD_CUP_SEASON || 2026);
 const CACHE_MS = Number(process.env.API_CACHE_MS || 1000 * 60 * 10);
-const PLAYER_SUMMARY_LIMIT = Number(process.env.PLAYER_SUMMARY_LIMIT || 32);
+const PLAYER_SUMMARY_LIMIT = Number(process.env.PLAYER_SUMMARY_LIMIT || 128);
 const FIFA_RANKING_SOURCE = "Ranking FIFA masculino - base manual revisada em 2026-06-19";
 
 let cache = {
@@ -1547,21 +1547,14 @@ function sortStandingRows(a, b) {
 function applyRankingMovement(events, teams) {
   const currentRows = rankingRows(teams);
   const currentPositions = Object.fromEntries(currentRows.map((row) => [row.key, row.position]));
+  const baseRows = baseRankingRows(teams);
+  const basePositions = Object.fromEntries(baseRows.map((row) => [row.key, row.position]));
 
   Object.entries(teams).forEach(([teamKey, team]) => {
     if (team.placeholder || !team.sourceId) return;
 
-    const lastMatch = latestFinishedEventForTeam(events, team.sourceId);
-    if (!lastMatch) {
-      team.previousPosition = currentPositions[teamKey];
-      team.positionDelta = 0;
-      team.movement = "same";
-      return;
-    }
-
-    const previousWeight = previousWeightBeforeLastMatch(team, lastMatch, team.sourceId, teams);
-    const beforeRows = rankingRows(teams, teamKey, previousWeight);
-    const previousPosition = beforeRows.find((row) => row.key === teamKey)?.position || currentPositions[teamKey];
+    const previousWeight = team.strength?.base ?? rankingWeight(team.fifaRank);
+    const previousPosition = basePositions[teamKey] || currentPositions[teamKey];
     const delta = previousPosition - currentPositions[teamKey];
 
     team.previousWeight = previousWeight;
@@ -1569,6 +1562,7 @@ function applyRankingMovement(events, teams) {
     team.previousPosition = previousPosition;
     team.positionDelta = delta;
     team.movement = delta > 0 ? "up" : delta < 0 ? "down" : "same";
+    team.movementBasis = "base-ranking";
   });
 }
 
@@ -1578,6 +1572,18 @@ function rankingRows(teams, overrideKey, overrideWeight) {
     .map(([key, team]) => ({
       key,
       weight: key === overrideKey ? overrideWeight : team.weight,
+      name: team.name,
+    }))
+    .sort((a, b) => b.weight - a.weight || a.name.localeCompare(b.name, "pt-BR"))
+    .map((row, index) => ({ ...row, position: index + 1 }));
+}
+
+function baseRankingRows(teams) {
+  return Object.entries(teams)
+    .filter(([, team]) => !team.placeholder)
+    .map(([key, team]) => ({
+      key,
+      weight: team.strength?.base ?? rankingWeight(team.fifaRank),
       name: team.name,
     }))
     .sort((a, b) => b.weight - a.weight || a.name.localeCompare(b.name, "pt-BR"))

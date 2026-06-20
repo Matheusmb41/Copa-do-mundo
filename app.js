@@ -245,7 +245,7 @@ const renderWeights = () => {
                 <strong>${team.name}</strong>
               </div>
               <span class="weight-value">${team.weight.toFixed(1)}</span>
-              <div class="weight-meta">Ranking FIFA #${team.fifaRank} - base ${formatMetaNumber(team.strength?.base)} - amostra ${Math.round((team.strength?.sampleConfidence || 0) * 100)}% - peso ${team.weightDelta > 0 ? "+" : ""}${Number(team.weightDelta || 0).toFixed(1)}</div>
+              <div class="weight-meta">Ranking FIFA #${team.fifaRank} - base ${formatMetaNumber(team.strength?.base)} - amostra ${Math.round((team.strength?.sampleConfidence || 0) * 100)}% - vs base ${team.weightDelta > 0 ? "+" : ""}${Number(team.weightDelta || 0).toFixed(1)}</div>
             </article>
           `;
         })
@@ -357,8 +357,9 @@ const rankingMovement = (team) => {
         ? `caiu ${Math.abs(team.positionDelta)}`
         : "mesma posicao";
   const weightLabel = weightDelta ? `peso ${weightDelta > 0 ? "+" : ""}${weightDelta.toFixed(1)}` : "peso estavel";
+  const basisLabel = team.movementBasis === "base-ranking" ? "Base FIFA da Copa" : "Antes do ultimo jogo";
 
-  return `<small class="rank-move ${direction}" title="Antes do ultimo jogo: ${team.previousPosition}o lugar; ${weightLabel}"><span class="rank-arrow">${signal}</span><span class="rank-number">${Math.abs(team.positionDelta)}</span><span class="sr-detail">${positionLabel}; ${weightLabel}</span></small>`;
+  return `<small class="rank-move ${direction}" title="${basisLabel}: ${team.previousPosition}o lugar; ${weightLabel}"><span class="rank-arrow">${signal}</span><span class="rank-number">${Math.abs(team.positionDelta)}</span><span class="sr-detail">${positionLabel}; ${weightLabel}</span></small>`;
 };
 
 const renderGroups = () => {
