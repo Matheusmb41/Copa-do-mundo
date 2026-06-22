@@ -226,6 +226,39 @@ body.modal-open {
   color: var(--muted);
 }
 
+.model-stat-list {
+  display: grid;
+  gap: 8px;
+}
+
+.model-stat-row {
+  display: grid;
+  grid-template-columns: minmax(140px, 1fr) 64px repeat(3, minmax(92px, auto));
+  gap: 10px;
+  align-items: center;
+  padding: 9px 0;
+  border-bottom: 1px solid var(--line);
+  font-size: 12px;
+}
+
+.model-stat-row:last-child {
+  border-bottom: 0;
+}
+
+.model-stat-row span {
+  font-weight: 700;
+}
+
+.model-stat-row small {
+  color: var(--muted);
+}
+
+.health-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 10px;
+}
+
 .calibration-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
@@ -1026,6 +1059,37 @@ body.modal-open {
   font-size: 11px;
 }
 
+.simulation-loading-card {
+  overflow: hidden;
+}
+
+.loading-bar {
+  height: 7px;
+  margin-top: 12px;
+  border-radius: 999px;
+  background: #11141a;
+  overflow: hidden;
+}
+
+.loading-bar span {
+  display: block;
+  width: 45%;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--blue), var(--green));
+  animation: loading-slide 1.1s ease-in-out infinite;
+}
+
+@keyframes loading-slide {
+  0% {
+    transform: translateX(-105%);
+  }
+
+  100% {
+    transform: translateX(235%);
+  }
+}
+
 .simulation-metrics {
   display: grid;
   grid-template-columns: repeat(6, minmax(0, 1fr));
@@ -1138,6 +1202,91 @@ body.modal-open {
 .qualification-pill.out {
   background: rgb(255 255 255 / 7%);
   color: var(--muted);
+}
+
+.evolution-list {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+}
+
+.evolution-row {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+}
+
+.evolution-row header,
+.evolution-favorite,
+.evolution-bar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+}
+
+.evolution-row header span,
+.evolution-favorite span,
+.evolution-favorite em {
+  color: var(--muted);
+  font-size: 12px;
+  font-style: normal;
+}
+
+.evolution-favorite {
+  grid-template-columns: auto minmax(0, 1fr) auto;
+}
+
+.evolution-bars {
+  display: grid;
+  gap: 7px;
+}
+
+.evolution-subtitle {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.evolution-bar {
+  grid-template-columns: minmax(110px, 170px) minmax(0, 1fr) minmax(76px, auto);
+  font-size: 12px;
+}
+
+.evolution-bar span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.evolution-bar div {
+  height: 7px;
+  border-radius: 999px;
+  background: #11141a;
+  overflow: hidden;
+}
+
+.evolution-bar i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--blue), var(--green));
+}
+
+.chance-trend {
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.chance-trend.up {
+  color: var(--green);
+}
+
+.chance-trend.down {
+  color: var(--red);
 }
 
 .bracket-instructions {
@@ -1488,6 +1637,19 @@ body.modal-open {
 
   .simulation-metrics {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .model-stat-row {
+    grid-template-columns: 1fr auto;
+  }
+
+  .model-stat-row small {
+    grid-column: span 2;
+  }
+
+  .evolution-favorite,
+  .evolution-bar {
+    grid-template-columns: 1fr;
   }
 
   .champion-simulation,

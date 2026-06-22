@@ -4,3 +4,4 @@ node_modules/
 .tools/
 data/prediction-history.json
 data/espn-summary-cache.json
+data/simulation-history.json

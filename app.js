@@ -4,6 +4,10 @@ let selectedTeamKey = null;
 let predictionHistory = null;
 let gamesView = "groups";
 let simulationView = "qualified";
+let simulationData = null;
+let simulationLoading = false;
+let simulationError = "";
+let systemHealth = null;
 let knockoutSimulationCache = null;
 const DATA_REFRESH_MS = 1000 * 60 * 2;
 const KNOCKOUT_SIMULATION_RUNS = 30000;
@@ -495,11 +499,14 @@ const renderPredictionStats = () => {
       ${accuracyCard("Empate", summary.draw, evaluated)}
     </section>
     ${renderProbabilityBuckets(predictionHistory.probabilityBuckets)}
+    ${renderAccuracyByGameType(predictionHistory.accuracyByGameType)}
+    ${renderModelVersionStats(predictionHistory.modelVersions)}
     <section class="details-card">
       <h3>Últimas avaliações</h3>
       ${evaluatedMatches.length ? renderEvaluatedMatches(evaluatedMatches) : "<p>Nenhum jogo com premonição anterior foi finalizado ainda.</p>"}
     </section>
     ${renderCalibration(predictionHistory.calibration)}
+    ${renderHealthStatus()}
   `;
 };
 
@@ -595,6 +602,74 @@ const renderProbabilityBuckets = (buckets = []) => {
             `
           )
           .join("")}
+      </div>
+    </section>
+  `;
+};
+
+const renderAccuracyByGameType = (rows = []) => {
+  if (!rows.length) return "";
+
+  return `
+    <section class="details-card">
+      <h3>Acerto por tipo de jogo</h3>
+      <div class="model-stat-list">
+        ${rows
+          .map(
+            (row) => `
+              <div class="model-stat-row">
+                <span>${row.label}</span>
+                <strong>${row.rate || 0}%</strong>
+                <small>${row.hits || 0}/${row.total || 0} geral</small>
+                <small>${row.exactRate || 0}% placar exato</small>
+                <small>${formatStatDecimal(row.averageGoalError)} erro gols</small>
+              </div>
+            `
+          )
+          .join("")}
+      </div>
+    </section>
+  `;
+};
+
+const renderModelVersionStats = (rows = []) => {
+  if (!rows.length) return "";
+
+  return `
+    <section class="details-card">
+      <h3>Versões do modelo</h3>
+      <div class="model-stat-list">
+        ${rows
+          .map(
+            (row) => `
+              <div class="model-stat-row">
+                <span>${row.label}</span>
+                <strong>${row.rate || 0}%</strong>
+                <small>${row.hits || 0}/${row.total || 0} geral</small>
+                <small>${row.exactRate || 0}% placar exato</small>
+                <small>${formatStatDecimal(row.averageGoalError)} erro gols</small>
+              </div>
+            `
+          )
+          .join("")}
+      </div>
+    </section>
+  `;
+};
+
+const renderHealthStatus = () => {
+  if (!systemHealth) return "";
+
+  return `
+    <section class="details-card health-card">
+      <h3>Status do backend</h3>
+      <div class="health-grid">
+        ${calibrationItem("Estado", systemHealth.status || "-")}
+        ${calibrationItem("Histórico", systemHealth.historyStorage || "-")}
+        ${calibrationItem("Simulações", systemHealth.simulationHistoryStorage || "-")}
+        ${calibrationItem("Snapshots", systemHealth.simulationSnapshots || 0)}
+        ${calibrationItem("Última Copa", formatHistoryDate(systemHealth.worldCupUpdatedAt))}
+        ${calibrationItem("Simulação", formatHistoryDate(systemHealth.simulationGeneratedAt))}
       </div>
     </section>
   `;
@@ -1070,126 +1145,56 @@ const evaluateSimulationScenario = (groups, counts) => {
 };
 
 const buildRound32Simulation = () => {
-  const cacheKey = simulationCacheKey();
-  if (knockoutSimulationCache?.key === cacheKey) return knockoutSimulationCache.value;
+  if (simulationData) return simulationData;
+  return {
+    runs: 0,
+    groups: [],
+    thirdRows: [],
+    championRows: [],
+    sources: {},
+    history: [],
+  };
+};
 
-  const groupMatches = (appData.matches || []).filter(isGroupStageMatch).sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
-  const deterministic = buildProjectionTables(groupMatches, deterministicProjectionScore);
-  const teamKeys = deterministic.groups.flatMap((group) => group.teams.map((team) => team.teamKey));
-  const counts = Object.fromEntries(
-    teamKeys.map((teamKey) => [
-      teamKey,
-      {
-        first: 0,
-        second: 0,
-        third: 0,
-        qualified: 0,
-        round16: 0,
-        quarterfinal: 0,
-        semifinal: 0,
-        final: 0,
-        champion: 0,
-      },
-    ])
-  );
-  const rng = seededRandom(hashString(cacheKey || "premonicao"));
-  const knockoutRounds = groupKnockoutRounds((appData.matches || []).filter(isKnockoutMatch));
-
-  for (let run = 0; run < KNOCKOUT_SIMULATION_RUNS; run += 1) {
-    const scenario = buildProjectionTables(groupMatches, (match) => randomProjectionScore(match, rng));
-    const thirdRows = evaluateSimulationScenario(scenario.groups, counts);
-    simulateFullBracket(knockoutRounds, scenario.groups, thirdRows, { rng, counts });
+const renderSimulationState = () => {
+  if (simulationLoading) {
+    return `
+      <section class="round32-simulation">
+        <article class="details-card simulation-loading-card">
+          <h3>Calculando simulação</h3>
+          <p>O backend está processando 30 mil cenários e preparando as probabilidades.</p>
+          <div class="loading-bar"><span></span></div>
+        </article>
+      </section>
+    `;
   }
 
-  const probabilities = Object.fromEntries(
-    Object.entries(counts).map(([teamKey, count]) => [
-      teamKey,
-      {
-        first: Math.round((count.first / KNOCKOUT_SIMULATION_RUNS) * 100),
-        second: Math.round((count.second / KNOCKOUT_SIMULATION_RUNS) * 100),
-        third: Math.round((count.third / KNOCKOUT_SIMULATION_RUNS) * 100),
-        qualified: Math.round((count.qualified / KNOCKOUT_SIMULATION_RUNS) * 100),
-        round16: Math.round((count.round16 / KNOCKOUT_SIMULATION_RUNS) * 100),
-        quarterfinal: Math.round((count.quarterfinal / KNOCKOUT_SIMULATION_RUNS) * 100),
-        semifinal: Math.round((count.semifinal / KNOCKOUT_SIMULATION_RUNS) * 100),
-        final: Math.round((count.final / KNOCKOUT_SIMULATION_RUNS) * 100),
-        champion: Math.round((count.champion / KNOCKOUT_SIMULATION_RUNS) * 100),
-      },
-    ])
-  );
+  if (simulationError) {
+    return `
+      <section class="round32-simulation">
+        <article class="details-card">
+          <h3>Simulação indisponível</h3>
+          <p>${simulationError}</p>
+        </article>
+      </section>
+    `;
+  }
 
-  const thirdRows = deterministic.groups
-    .map((group) => group.teams[2] && { ...group.teams[2], groupName: group.name })
-    .filter(Boolean)
-    .sort(sortProjectionRows)
-    .map((row, index) => ({
-      ...row,
-      thirdPlaceRank: index + 1,
-      projectedThirdQualified: index < 8,
-      probabilities: probabilities[row.teamKey] || {},
-    }));
-
-  const thirdRankByTeam = Object.fromEntries(thirdRows.map((row) => [row.teamKey, row]));
-  const groups = deterministic.groups.map((group) => ({
-    ...group,
-    teams: group.teams.map((row) => {
-      const third = thirdRankByTeam[row.teamKey];
-      const probabilitiesForTeam = probabilities[row.teamKey] || {};
-      const projectedSlot =
-        row.projectedPosition <= 2
-          ? "Direto"
-          : third?.projectedThirdQualified
-            ? "Melhor 3º"
-            : "Fora";
-
-      return {
-        ...row,
-        projectedSlot,
-        thirdPlaceRank: third?.thirdPlaceRank || null,
-        probabilities: probabilitiesForTeam,
-      };
-    }),
-  }));
-  const projectedTeamsByKey = Object.fromEntries(groups.flatMap((group) => group.teams.map((team) => [team.teamKey, team])));
-  const championRows = Object.entries(probabilities)
-    .map(([teamKey, teamProbabilities]) => ({
-      ...(projectedTeamsByKey[teamKey] || appData.teams[teamKey] || {}),
-      teamKey,
-      probabilities: teamProbabilities,
-    }))
-    .filter((team) => team.probabilities.qualified)
-    .sort(
-      (a, b) =>
-        (b.probabilities.champion || 0) - (a.probabilities.champion || 0) ||
-        (b.probabilities.final || 0) - (a.probabilities.final || 0) ||
-        (b.weight || 0) - (a.weight || 0)
-    )
-    .slice(0, 12);
-
-  const value = {
-    runs: KNOCKOUT_SIMULATION_RUNS,
-    groups,
-    thirdRows,
-    championRows,
-    sources: deterministic.sources,
-  };
-
-  knockoutSimulationCache = { key: cacheKey, value };
-  return value;
+  return `
+    <section class="round32-simulation">
+      <article class="details-card">
+        <h3>Simulação aguardando dados</h3>
+        <p>A simulação será carregada pelo backend assim que os dados da Copa terminarem de atualizar.</p>
+      </article>
+    </section>
+  `;
 };
 
 const renderRound32Simulation = () => {
   const simulation = buildRound32Simulation();
 
   if (!simulation.groups.length) {
-    return `
-      <section class="round32-simulation">
-        <article class="details-card">
-          <h3>Simulação dos 16 avos indisponível</h3>
-          <p>A fonte ainda não retornou jogos suficientes da fase de grupos.</p>
-        </article>
-      </section>
-    `;
+    return renderSimulationState();
   }
 
   return `
@@ -1226,6 +1231,7 @@ const renderSimulationSummary = (simulation) => `
 const simulationTitle = () => {
   if (simulationView === "bracket") return "Chave simulada";
   if (simulationView === "champion") return "Favoritos ao título";
+  if (simulationView === "evolution") return "Evolução dos favoritos ao título";
   return "Classificados projetados";
 };
 
@@ -1360,14 +1366,7 @@ const renderChampionSimulationView = () => {
   const simulation = buildRound32Simulation();
 
   if (!simulation.groups.length) {
-    return `
-      <section class="round32-simulation">
-        <article class="details-card">
-          <h3>Simulação indisponível</h3>
-          <p>A fonte ainda não retornou jogos suficientes da fase de grupos.</p>
-        </article>
-      </section>
-    `;
+    return renderSimulationState();
   }
 
   return `
@@ -1376,6 +1375,89 @@ const renderChampionSimulationView = () => {
       ${renderChampionSimulation(simulation.championRows)}
     </section>
   `;
+};
+
+const renderSimulationEvolutionView = () => {
+  const simulation = buildRound32Simulation();
+  const snapshots = [...(simulation.history || [])].reverse();
+
+  if (!snapshots.length) {
+    return renderSimulationState();
+  }
+
+  return `
+    <section class="round32-simulation">
+      ${renderSimulationSummary(simulation)}
+      <article class="champion-simulation">
+        <h3>Evolução dos favoritos ao título</h3>
+        <div class="evolution-list">
+          ${snapshots.map((snapshot, index) => renderSimulationSnapshot(snapshot, snapshots[index + 1])).join("")}
+        </div>
+      </article>
+    </section>
+  `;
+};
+
+const renderSimulationSnapshot = (snapshot, previousSnapshot = null) => {
+  const favorite = snapshot.favorite;
+  const topChampions = (snapshot.topChampions || []).slice(0, 4);
+  const previousByName = new Map((previousSnapshot?.topChampions || []).map((team) => [team.name, team]));
+
+  return `
+    <article class="evolution-row">
+      <header>
+        <strong>${formatHistoryDate(snapshot.capturedAt)}</strong>
+        <span>${snapshot.runs || 0} cenários</span>
+      </header>
+      ${
+        favorite
+          ? `
+            <div class="evolution-favorite">
+              <span>Favorito</span>
+              <strong>${favorite.name}</strong>
+              <em>${favorite.champion || 0}% título</em>
+            </div>
+          `
+          : "<p>Sem favorito calculado.</p>"
+      }
+      <strong class="evolution-subtitle">Top 4 ao título</strong>
+      <div class="evolution-bars">
+        ${topChampions
+          .map(
+            (team) => `
+              <div class="evolution-bar">
+                <span>${team.name}</span>
+                <div><i style="width: ${team.champion || 0}%"></i></div>
+                <strong>${renderChampionTrend(team, previousByName.get(team.name))}</strong>
+              </div>
+            `
+          )
+          .join("")}
+      </div>
+    </article>
+  `;
+};
+
+const renderChampionTrend = (team, previousTeam) => {
+  const current = Number(team?.champion || 0);
+  const previous = Number(previousTeam?.champion ?? current);
+  const direction = current > previous ? "up" : current < previous ? "down" : "flat";
+
+  return `<span class="chance-trend ${direction}">${previous}% → ${current}%</span>`;
+};
+
+const formatHistoryDate = (value) => {
+  if (!value) return "-";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "-";
+
+  return new Intl.DateTimeFormat("pt-BR", {
+    timeZone: appTimeZone(),
+    day: "2-digit",
+    month: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(date);
 };
 
 const roundMatches = (rounds, key) => rounds.find((round) => round.key === key)?.matches || [];
@@ -1759,6 +1841,10 @@ const renderSimulationBracketView = () => {
   const simulation = buildRound32Simulation();
   const knockoutMatches = (appData.matches || []).filter(isKnockoutMatch);
 
+  if (!simulation.groups.length) {
+    return renderSimulationState();
+  }
+
   if (!knockoutMatches.length) {
     return `
       <section class="round32-simulation">
@@ -1821,6 +1907,11 @@ const renderSimulation = () => {
 
   if (simulationView === "champion") {
     container.innerHTML = renderChampionSimulationView();
+    return;
+  }
+
+  if (simulationView === "evolution") {
+    container.innerHTML = renderSimulationEvolutionView();
     return;
   }
 
@@ -2207,7 +2298,9 @@ const loadBackendData = async ({ preserveSelection = false, silent = false } = {
         ? previousSelectedMatchId
         : null;
     await loadPredictionHistory();
+    await loadHealthData();
     renderApp();
+    loadSimulationData({ silent });
 
     if (!silent) {
       setDataStatus("Dados atualizados.", "ok");
@@ -2226,6 +2319,37 @@ const loadBackendData = async ({ preserveSelection = false, silent = false } = {
   }
 };
 
+const loadSimulationData = async ({ silent = false } = {}) => {
+  if (simulationLoading) return;
+
+  simulationLoading = !silent;
+  if (!silent) {
+    simulationError = "";
+    renderSimulation();
+  }
+
+  try {
+    const response = await fetch(endpointFor("/api/simulation"));
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(data.message || "Backend não conseguiu calcular a simulação.");
+    }
+
+    simulationData = data;
+    simulationError = "";
+  } catch (error) {
+    if (!silent) {
+      simulationData = null;
+      simulationError = error.message || "Simulação indisponível.";
+    }
+    console.warn(error);
+  } finally {
+    simulationLoading = false;
+    renderSimulation();
+  }
+};
+
 const loadPredictionHistory = async () => {
   try {
     const response = await fetch(endpointFor("/api/prediction-history"));
@@ -2238,8 +2362,21 @@ const loadPredictionHistory = async () => {
       awaitingResult: 0,
       resultWithoutPrediction: 0,
       summary: { exactScore: 0, winner: 0, draw: 0, direction: 0 },
+      probabilityBuckets: [],
+      accuracyByGameType: [],
+      modelVersions: [],
       matches: [],
     };
+  }
+};
+
+const loadHealthData = async () => {
+  try {
+    const response = await fetch(endpointFor("/api/health"));
+    if (!response.ok) throw new Error("Saúde do backend indisponível.");
+    systemHealth = await response.json();
+  } catch (error) {
+    systemHealth = null;
   }
 };
 
@@ -2300,3 +2437,9 @@ document.addEventListener("keydown", (event) => {
 
 loadBackendData();
 setInterval(() => loadBackendData({ preserveSelection: true, silent: true }), DATA_REFRESH_MS);
+
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("/service-worker.js").catch((error) => console.warn(error));
+  });
+}

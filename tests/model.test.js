@@ -398,3 +398,49 @@ test("substituto com aparicao entra na pontuacao individual", () => {
   assert.ok(score.total > 0);
   assert.ok(score.total <= 10);
 });
+
+test("pontuacao individual considera a posicao do jogador", () => {
+  const defensiveStats = {
+    appearances: "1",
+    totalTackles: "4",
+    interceptions: "3",
+    saves: "5",
+    goalsConceded: "0",
+    totalGoals: "0",
+    goalAssists: "0",
+  };
+
+  const goalkeeper = _test.playerScoreFromStats(defensiveStats, "GK");
+  const forward = _test.playerScoreFromStats(defensiveStats, "FW");
+
+  assert.equal(_test.playerPositionGroup("GK"), "goalkeeper");
+  assert.ok(goalkeeper.defense > forward.defense);
+  assert.ok(goalkeeper.total > forward.total);
+});
+
+test("estatisticas agrupam acertos por tipo de jogo e versao do modelo", () => {
+  const records = [
+    {
+      initialPrediction: { homeGoals: 2, awayGoals: 0, winner: "home", favoriteChance: 76, modelVersion: "v2" },
+      evaluation: { direction: true, exactScore: false, totalGoalError: 1 },
+    },
+    {
+      initialPrediction: { homeGoals: 1, awayGoals: 1, winner: "draw", favoriteChance: 44, modelVersion: "v2" },
+      evaluation: { direction: false, exactScore: false, totalGoalError: 2 },
+    },
+    {
+      initialPrediction: { homeGoals: 1, awayGoals: 0, winner: "home", favoriteChance: 54, modelVersion: "v1" },
+      evaluation: { direction: true, exactScore: true, totalGoalError: 0 },
+    },
+  ];
+
+  const byType = _test.buildAccuracyByGameType(records);
+  const strongFavorite = byType.find((row) => row.label === "Favorito forte");
+  const draw = byType.find((row) => row.label === "Empate previsto");
+  const versions = _test.buildModelVersionStats(records);
+
+  assert.equal(strongFavorite.rate, 100);
+  assert.equal(draw.rate, 0);
+  assert.equal(versions.find((row) => row.label === "v2").total, 2);
+  assert.equal(versions.find((row) => row.label === "v1").exactRate, 100);
+});
