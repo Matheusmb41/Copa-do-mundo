@@ -58,6 +58,30 @@ test("favorito claro fica acima em chance e placar previsto", () => {
   assert.ok(prediction.favoriteChance >= 60);
 });
 
+test("probabilidades da premonicao ficam normalizadas", () => {
+  resetHistory();
+
+  const teams = {
+    home: {
+      name: "Favorito",
+      fifaRank: 5,
+      strength: { overall: 86, attack: 87, defense: 84, form: 2.2, players: 2.1 },
+    },
+    away: {
+      name: "Azarao",
+      fifaRank: 91,
+      strength: { overall: 42, attack: 41, defense: 40, form: -1.1, players: -0.8 },
+    },
+  };
+
+  const prediction = predictMatch({ home: "home", away: "away" }, teams);
+  const total = prediction.homeChance + prediction.drawChance + prediction.awayChance;
+
+  assert.equal(total, 100);
+  assert.ok(prediction.homeChance > prediction.awayChance);
+  assert.ok(prediction.homeGoals > prediction.awayGoals);
+});
+
 test("avaliacao separa placar exato, resultado geral e erro de gols", () => {
   const evaluation = evaluatePrediction(
     {
@@ -326,4 +350,51 @@ test("histórico antigo sem premonição e consertado quando jogo finalizado rea
   assert.equal(record.evaluatedPrediction.homeGoals, 3);
   assert.equal(record.evaluation.exactScore, true);
   assert.equal(record.predictionRecovered, true);
+});
+
+test("lista de jogadores ignora atletas sem partida registrada", () => {
+  const players = _test.normalizePlayerScoreList({
+    played: {
+      id: "1",
+      name: "Jogador titular",
+      games: 1,
+      total: 6.4,
+      attack: 3.1,
+      defense: 3.3,
+      goals: 0,
+      assists: 0,
+    },
+    leaderOnly: {
+      id: "2",
+      name: "Jogador sem minutos",
+      games: 0,
+      total: 0.63,
+      attack: 0.63,
+      defense: 0,
+      goals: 0,
+      assists: 0,
+    },
+  });
+
+  assert.deepEqual(
+    players.map((player) => player.name),
+    ["Jogador titular"]
+  );
+});
+
+test("substituto com aparicao entra na pontuacao individual", () => {
+  const score = _test.playerScoreFromStats({
+    appearances: "1",
+    subIns: "1",
+    foulsCommitted: "1",
+    offsides: "1",
+    totalGoals: "0",
+    goalAssists: "0",
+    shotsOnTarget: "0",
+    totalShots: "0",
+  });
+
+  assert.ok(score);
+  assert.ok(score.total > 0);
+  assert.ok(score.total <= 10);
 });

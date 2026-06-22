@@ -549,6 +549,68 @@ function clamp(value, min, max) {
   return Math.min(Math.max(value, min), max);
 }
 
+function normalizeOutcomeChances(home, draw, away) {
+  const values = [
+    { key: "homeChance", value: Math.max(0.01, home) },
+    { key: "drawChance", value: Math.max(0.01, draw) },
+    { key: "awayChance", value: Math.max(0.01, away) },
+  ];
+  const total = values.reduce((sum, item) => sum + item.value, 0) || 1;
+  const normalized = values.map((item) => {
+    const exact = (item.value / total) * 100;
+    return {
+      ...item,
+      exact,
+      rounded: Math.floor(exact),
+      fraction: exact - Math.floor(exact),
+    };
+  });
+  let remaining = 100 - normalized.reduce((sum, item) => sum + item.rounded, 0);
+
+  normalized
+    .sort((a, b) => b.fraction - a.fraction)
+    .forEach((item) => {
+      if (remaining <= 0) return;
+      item.rounded += 1;
+      remaining -= 1;
+    });
+
+  return Object.fromEntries(normalized.map((item) => [item.key, item.rounded]));
+}
+
+function predictionChances(diff, expectedHome, expectedAway, calibration) {
+  const expectedGap = expectedHome - expectedAway;
+  const draw = clamp(28 + calibration.drawBias - Math.abs(diff) * 0.42 - Math.abs(expectedGap) * 4.5, 10, 36);
+  const remaining = 100 - draw;
+  const homeShare = clamp(0.5 + (diff * 1.05 + expectedGap * 6) / Math.max(remaining, 1), 0.07, 0.93);
+  const home = remaining * homeShare;
+  const away = remaining - home;
+
+  return normalizeOutcomeChances(home, draw, away);
+}
+
+function scorelineFromExpected(expectedHome, expectedAway, chances) {
+  let homeGoals = clamp(Math.round(expectedHome), 0, 5);
+  let awayGoals = clamp(Math.round(expectedAway), 0, 5);
+  const favoriteGap = Math.abs(chances.homeChance - chances.awayChance);
+  const drawIsCentral = chances.drawChance >= Math.max(chances.homeChance, chances.awayChance) - 2;
+
+  if (drawIsCentral && Math.abs(expectedHome - expectedAway) < 0.25) {
+    const goals = clamp(Math.round((expectedHome + expectedAway) / 2), 0, 4);
+    return { homeGoals: goals, awayGoals: goals };
+  }
+
+  if (chances.homeChance > chances.awayChance && favoriteGap >= 12 && homeGoals <= awayGoals) {
+    homeGoals = clamp(awayGoals + 1, 1, 5);
+  }
+
+  if (chances.awayChance > chances.homeChance && favoriteGap >= 12 && awayGoals <= homeGoals) {
+    awayGoals = clamp(homeGoals + 1, 1, 5);
+  }
+
+  return { homeGoals, awayGoals };
+}
+
 function predictMatch(match, teams) {
   const calibration = modelCalibration();
   const home = teams[match.home];
@@ -564,14 +626,15 @@ function predictMatch(match, teams) {
   const playerGap = homeProfile.players - awayProfile.players;
   const expectedHome = expectedGoals(1.18 + diff / 32 + attackGapHome / 42 + formGap / 85 + playerGap / 70, calibration);
   const expectedAway = expectedGoals(1.08 - diff / 34 + attackGapAway / 42 - formGap / 90 - playerGap / 75, calibration);
-  const drawChance = clamp(28 + calibration.drawBias - Math.abs(diff) * 0.42 - Math.abs(expectedHome - expectedAway) * 4.5, 10, 36);
-  const homeChance = clamp((100 - drawChance) / 2 + diff * 1.05 + (expectedHome - expectedAway) * 6, 6, 86);
-  const awayChance = 100 - drawChance - homeChance;
-  const homeGoals = clamp(Math.round(expectedHome), 0, 5);
-  const awayGoals = clamp(Math.round(expectedAway), 0, 5);
-  const favoriteChance = Math.round(Math.max(homeChance, awayChance));
+  const chances = predictionChances(diff, expectedHome, expectedAway, calibration);
+  const { homeGoals, awayGoals } = scorelineFromExpected(expectedHome, expectedAway, chances);
+  const favoriteChance = Math.max(chances.homeChance, chances.awayChance);
   const agreement = Math.sign(diff || 0) === Math.sign((expectedHome - expectedAway) || 0) ? 6 : -4;
-  const confidence = clamp(Math.round(44 + Math.abs(diff) * 1.05 + Math.abs(expectedHome - expectedAway) * 8 + agreement), 38, 91);
+  const confidence = clamp(
+    Math.round(42 + Math.abs(diff) * 0.9 + Math.abs(expectedHome - expectedAway) * 7 + favoriteChance * 0.12 + agreement),
+    38,
+    91
+  );
 
   return {
     homeGoals,
@@ -580,9 +643,9 @@ function predictMatch(match, teams) {
       home: Number(expectedHome.toFixed(2)),
       away: Number(expectedAway.toFixed(2)),
     },
-    homeChance: Math.round(homeChance),
-    drawChance: Math.round(drawChance),
-    awayChance: Math.round(awayChance),
+    homeChance: chances.homeChance,
+    drawChance: chances.drawChance,
+    awayChance: chances.awayChance,
     favoriteChance,
     confidence,
     reason: buildReason(home, away, diff, homeWeight, awayWeight, expectedHome, expectedAway),
@@ -912,7 +975,7 @@ async function buildEspnWorldCupPayload() {
     const shotsOnTargetPerGame = played ? stats.shotsOnTarget / played : 0;
     const possession = stats.possessionSamples ? stats.possessionTotal / stats.possessionSamples : 50;
     const opponentStrength = record.opponentSamples ? record.opponentRankWeightTotal / record.opponentSamples : rankingWeight(75);
-    const players = (Array.isArray(playerImpact.players) ? playerImpact.players : Object.values(playerImpact.players || {})).slice(0, 18);
+    const players = Array.isArray(playerImpact.players) ? playerImpact.players : Object.values(playerImpact.players || {});
     const topPlayers = players.slice(0, 5);
     const topPlayerAverage = topPlayers.length ? topPlayers.reduce((sum, player) => sum + Number(player.average || 0), 0) / topPlayers.length : 6;
 
@@ -1229,7 +1292,7 @@ function buildTeamStrength(team, context) {
   const defenseModifier = clamp(defensiveForm * sampleConfidence + playerStrength * 0.25, -6, 8);
   const attackStrength = context.base + attackModifier;
   const defenseStrength = context.base + defenseModifier;
-  const profileBalance = ((attackStrength + defenseStrength) / 2 - context.base) * 0.65;
+  const profileBalance = ((attackStrength + defenseStrength) / 2 - context.base) * 0.65 * calibration.profileMultiplier;
   const rawOverall =
     context.base +
     formStrength * calibration.formMultiplier * 0.42 +
@@ -1273,6 +1336,26 @@ function emptyPlayerImpact() {
     highlights: [],
     players: {},
   };
+}
+
+function normalizePlayerScoreList(players) {
+  return Object.values(players || {})
+    .map((player) => {
+      const games = Number(player.games || 0);
+      const gamesForAverage = Math.max(1, games);
+      const cappedTotal = clamp(player.total, 0, gamesForAverage * 10);
+
+      return {
+        ...player,
+        games,
+        total: Number(cappedTotal.toFixed(2)),
+        average: Number((cappedTotal / gamesForAverage).toFixed(2)),
+        attack: Number(player.attack.toFixed(2)),
+        defense: Number(player.defense.toFixed(2)),
+      };
+    })
+    .filter((player) => player.games > 0)
+    .sort((a, b) => b.average - a.average || b.total - a.total || a.name.localeCompare(b.name, "pt-BR"));
 }
 
 async function buildPlayerImpacts(events) {
@@ -1321,22 +1404,7 @@ async function buildPlayerImpacts(events) {
 
   Object.values(impacts).forEach((impact) => {
     impact.total = clamp(impact.attack + impact.defense, -3, 5);
-    impact.players = Object.values(impact.players)
-      .map((player) => {
-        const games = player.games || 0;
-        const gamesForAverage = Math.max(1, games);
-        const cappedTotal = clamp(player.total, 0, gamesForAverage * 10);
-
-        return {
-          ...player,
-          games,
-          total: Number(cappedTotal.toFixed(2)),
-          average: Number((cappedTotal / gamesForAverage).toFixed(2)),
-          attack: Number(player.attack.toFixed(2)),
-          defense: Number(player.defense.toFixed(2)),
-        };
-      })
-      .sort((a, b) => b.average - a.average || b.total - a.total || a.name.localeCompare(b.name, "pt-BR"));
+    impact.players = normalizePlayerScoreList(impact.players);
   });
 
   return impacts;
@@ -1495,6 +1563,7 @@ function applyRosterImpacts(impacts, rosters) {
 }
 
 function playerScoreFromStats(stats) {
+  const appearances = numberStat(stats.appearances);
   const minutes = numberStat(stats.minutes) || numberStat(stats.minutesPlayed) || numberStat(stats.totalMinutes);
   const goals = numberStat(stats.totalGoals);
   const assists = numberStat(stats.goalAssists);
@@ -1508,9 +1577,14 @@ function playerScoreFromStats(stats) {
   const interceptions = numberStat(stats.interceptions);
   const clearances = numberStat(stats.clearances);
   const saves = numberStat(stats.saves);
+  const foulsCommitted = numberStat(stats.foulsCommitted);
+  const foulsSuffered = numberStat(stats.foulsSuffered);
+  const offsides = numberStat(stats.offsides);
+  const subIns = numberStat(stats.subIns);
   const yellowCards = numberStat(stats.yellowCards);
   const redCards = numberStat(stats.redCards);
   const activity =
+    appearances +
     minutes +
     goals +
     assists +
@@ -1524,15 +1598,26 @@ function playerScoreFromStats(stats) {
     interceptions +
     clearances +
     saves +
+    foulsCommitted +
+    foulsSuffered +
+    offsides +
+    subIns +
     yellowCards +
     redCards;
 
   if (!activity) return null;
 
-  const base = minutes ? 5.55 + clamp(minutes / 90, 0, 1) * 0.55 : 5.85;
-  const attack = goals * 1.25 + assists * 0.85 + shotsOnTarget * 0.28 + totalShots * 0.08 + accuratePasses * 0.01 + chancesCreated * 0.18;
+  const base = minutes ? 5.55 + clamp(minutes / 90, 0, 1) * 0.55 : appearances ? 5.25 + Math.min(subIns, 1) * 0.15 : 5.85;
+  const attack =
+    goals * 1.25 +
+    assists * 0.85 +
+    shotsOnTarget * 0.28 +
+    totalShots * 0.08 +
+    accuratePasses * 0.01 +
+    chancesCreated * 0.18 +
+    foulsSuffered * 0.04;
   const defense = defensiveInterventions * 0.14 + tacklesWon * 0.18 + interceptions * 0.2 + clearances * 0.1 + saves * 0.35;
-  const penalties = yellowCards * 0.4 + redCards * 1.6;
+  const penalties = yellowCards * 0.4 + redCards * 1.6 + foulsCommitted * 0.08 + offsides * 0.08;
 
   return {
     attack,
@@ -1820,8 +1905,12 @@ function applyRankingMovement(events, teams) {
   Object.entries(teams).forEach(([teamKey, team]) => {
     if (team.placeholder || !team.sourceId) return;
 
-    const previousWeight = team.strength?.base ?? rankingWeight(team.fifaRank);
-    const previousPosition = basePositions[teamKey] || currentPositions[teamKey];
+    const latestEvent = latestFinishedEventForTeam(events, team.sourceId);
+    const baseWeight = team.strength?.base ?? rankingWeight(team.fifaRank);
+    const previousWeight = latestEvent ? previousWeightBeforeLastMatch(team, latestEvent, team.sourceId, teams) : baseWeight;
+    const previousPosition = latestEvent
+      ? rankingRows(teams, teamKey, previousWeight).find((row) => row.key === teamKey)?.position || currentPositions[teamKey]
+      : basePositions[teamKey] || currentPositions[teamKey];
     const delta = previousPosition - currentPositions[teamKey];
 
     team.previousWeight = previousWeight;
@@ -1829,7 +1918,7 @@ function applyRankingMovement(events, teams) {
     team.previousPosition = previousPosition;
     team.positionDelta = delta;
     team.movement = delta > 0 ? "up" : delta < 0 ? "down" : "same";
-    team.movementBasis = "base-ranking";
+    team.movementBasis = latestEvent ? "last-match" : "base-ranking";
   });
 }
 
@@ -2220,30 +2309,40 @@ function modelCalibration() {
     return defaultCalibration(0);
   }
 
-  const actualDraws = evaluated.filter((record) => record.result.winner === "draw").length;
-  const predictedDraws = evaluated.filter((record) => predictionForEvaluation(record).winner === "draw").length;
-  const directionHits = evaluated.filter((record) => record.evaluation.direction).length;
-  const exactHits = evaluated.filter((record) => record.evaluation.exactScore).length;
+  const weightedRecords = evaluated
+    .slice()
+    .sort((a, b) => (a.date || 0) - (b.date || 0))
+    .map((record, index) => ({
+      record,
+      weight: total === 1 ? 1 : 0.7 + (index / (total - 1)) * 0.3,
+    }));
+  const weightedTotal = weightedRecords.reduce((sum, item) => sum + item.weight, 0) || total;
+  const weightedCount = (predicate) =>
+    weightedRecords.reduce((sum, item) => sum + (predicate(item.record) ? item.weight : 0), 0);
+  const actualDraws = weightedCount((record) => record.result.winner === "draw");
+  const predictedDraws = weightedCount((record) => predictionForEvaluation(record).winner === "draw");
+  const directionHits = weightedCount((record) => record.evaluation.direction);
+  const exactHits = weightedCount((record) => record.evaluation.exactScore);
   const confidenceFactor = clamp(total / 12, 0.15, 1);
-  const directionRate = directionHits / total;
-  const exactRate = exactHits / total;
-  const drawGap = (actualDraws - predictedDraws) / total;
-  const goalStats = evaluated.reduce(
+  const directionRate = directionHits / weightedTotal;
+  const exactRate = exactHits / weightedTotal;
+  const drawGap = (actualDraws - predictedDraws) / weightedTotal;
+  const goalStats = weightedRecords.reduce(
     (acc, record) => {
-      const prediction = predictionForEvaluation(record);
+      const prediction = predictionForEvaluation(record.record);
       const predictedTotal = Number(prediction.homeGoals || 0) + Number(prediction.awayGoals || 0);
-      const actualTotal = Number(record.result.homeGoals || 0) + Number(record.result.awayGoals || 0);
+      const actualTotal = Number(record.record.result.homeGoals || 0) + Number(record.record.result.awayGoals || 0);
 
-      acc.totalGoalError += Number(record.evaluation.totalGoalError || Math.abs(predictedTotal - actualTotal));
-      acc.predictedGoals += predictedTotal;
-      acc.actualGoals += actualTotal;
+      acc.totalGoalError += Number(record.record.evaluation.totalGoalError || Math.abs(predictedTotal - actualTotal)) * record.weight;
+      acc.predictedGoals += predictedTotal * record.weight;
+      acc.actualGoals += actualTotal * record.weight;
       return acc;
     },
     { totalGoalError: 0, predictedGoals: 0, actualGoals: 0 }
   );
-  const averageGoalError = goalStats.totalGoalError / total;
-  const averagePredictedGoals = goalStats.predictedGoals / total;
-  const averageActualGoals = goalStats.actualGoals / total;
+  const averageGoalError = goalStats.totalGoalError / weightedTotal;
+  const averagePredictedGoals = goalStats.predictedGoals / weightedTotal;
+  const averageActualGoals = goalStats.actualGoals / weightedTotal;
   const goalBias = averagePredictedGoals - averageActualGoals;
   const goalErrorPressure = clamp((averageGoalError - 1.2) / 3, 0, 1);
   const biasCorrection = clamp(1 - goalBias * 0.045 * confidenceFactor, 0.9, 1.08);
@@ -2495,5 +2594,7 @@ module.exports = {
     mergePredictionHistories,
     formatMatchDay,
     formatMatchTime,
+    normalizePlayerScoreList,
+    playerScoreFromStats,
   },
 };

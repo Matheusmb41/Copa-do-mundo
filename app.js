@@ -307,7 +307,7 @@ const renderWeights = () => {
 
 const teamPlayersContent = (team) => {
   if (!team) return "";
-  const players = team.players || [];
+  const players = (team.players || []).filter((player) => Number(player.games || 0) > 0);
 
   if (!players.length) {
     return `
@@ -801,6 +801,7 @@ const seededRandom = (seed) => {
 };
 
 const clampNumber = (value, min, max) => Math.min(max, Math.max(min, value));
+const goalDistributionCache = new Map();
 
 const ensureProjectionTeam = (table, groupName, teamKey) => {
   if (table[groupName][teamKey]) return table[groupName][teamKey];
@@ -914,27 +915,86 @@ const normalizedOutcomeProbabilities = (match) => {
   return { home: homeChance / total, draw: draw / total, away: awayChance / total };
 };
 
-const scoreForOutcome = (match, outcome, rng) => {
+const projectionExpectedGoals = (match) => {
   const base = match.prediction || fallbackScoreByStrength(match);
-  const homeBase = Number(base.expectedGoals?.home ?? base.homeGoals ?? base.home ?? 1);
-  const awayBase = Number(base.expectedGoals?.away ?? base.awayGoals ?? base.away ?? 1);
-  const homeExtra = rng() > 0.78 ? 1 : 0;
-  const awayExtra = rng() > 0.82 ? 1 : 0;
+  const fallbackHome = Number(base.homeGoals ?? base.home ?? 1);
+  const fallbackAway = Number(base.awayGoals ?? base.away ?? 1);
+  const homeBase = Number(base.expectedGoals?.home ?? fallbackHome);
+  const awayBase = Number(base.expectedGoals?.away ?? fallbackAway);
 
+  return {
+    home: clampNumber(homeBase, 0.15, 4.8),
+    away: clampNumber(awayBase, 0.15, 4.8),
+  };
+};
+
+const goalDistributionFor = (lambda, max = 6) => {
+  const safeLambda = clampNumber(lambda, 0.05, max);
+  const key = `${safeLambda.toFixed(2)}:${max}`;
+  if (goalDistributionCache.has(key)) return goalDistributionCache.get(key);
+
+  const distribution = [];
+  let probability = Math.exp(-safeLambda);
+  let cumulative = probability;
+  distribution.push(cumulative);
+
+  for (let goals = 1; goals < max; goals += 1) {
+    probability *= safeLambda / goals;
+    cumulative += probability;
+    distribution.push(cumulative);
+  }
+
+  distribution.push(1);
+  goalDistributionCache.set(key, distribution);
+  return distribution;
+};
+
+const samplePoissonGoals = (lambda, rng, max = 6) => {
+  const distribution = goalDistributionFor(lambda, max);
+  const roll = rng();
+
+  for (let goals = 0; goals < distribution.length; goals += 1) {
+    if (roll <= distribution[goals]) return goals;
+  }
+
+  return max;
+};
+
+const scoreDirection = (home, away) => {
+  if (home > away) return "home";
+  if (away > home) return "away";
+  return "draw";
+};
+
+const forceOutcomeScore = (expected, outcome, rng) => {
   if (outcome === "draw") {
-    const goals = clampNumber(Math.round((homeBase + awayBase) / 2 + (rng() > 0.82 ? 1 : 0)), 0, 4);
+    const goals = samplePoissonGoals((expected.home + expected.away) / 2, rng, 5);
     return { home: goals, away: goals, source: "prediction" };
   }
 
   if (outcome === "home") {
-    const away = clampNumber(Math.round(awayBase * (rng() > 0.7 ? 1 : 0.65)) + awayExtra, 0, 4);
-    const home = clampNumber(Math.max(away + 1, Math.round(homeBase) + homeExtra), 1, 5);
+    const away = samplePoissonGoals(expected.away * 0.85, rng, 4);
+    const home = clampNumber(Math.max(away + 1, samplePoissonGoals(expected.home * 1.08, rng, 6)), 1, 6);
     return { home, away, source: "prediction" };
   }
 
-  const home = clampNumber(Math.round(homeBase * (rng() > 0.7 ? 1 : 0.65)) + homeExtra, 0, 4);
-  const away = clampNumber(Math.max(home + 1, Math.round(awayBase) + awayExtra), 1, 5);
+  const home = samplePoissonGoals(expected.home * 0.85, rng, 4);
+  const away = clampNumber(Math.max(home + 1, samplePoissonGoals(expected.away * 1.08, rng, 6)), 1, 6);
   return { home, away, source: "prediction" };
+};
+
+const scoreForOutcome = (match, outcome, rng) => {
+  const expected = projectionExpectedGoals(match);
+
+  for (let attempt = 0; attempt < 10; attempt += 1) {
+    const home = samplePoissonGoals(expected.home, rng, 6);
+    const away = samplePoissonGoals(expected.away, rng, 6);
+    if (scoreDirection(home, away) === outcome) {
+      return { home, away, source: "prediction" };
+    }
+  }
+
+  return forceOutcomeScore(expected, outcome, rng);
 };
 
 const randomProjectionScore = (match, rng) => {
@@ -1326,22 +1386,29 @@ const knockoutWinChance = (home, away) => {
   const homeWeight = Number(home?.weight || home?.strength?.overall || 50);
   const awayWeight = Number(away?.weight || away?.strength?.overall || 50);
   const rankEdge = (Number(away?.fifaRank || 75) - Number(home?.fifaRank || 75)) * 0.0018;
-  return clampNumber(0.5 + (homeWeight - awayWeight) * 0.011 + rankEdge, 0.12, 0.88);
+  const groupEdge =
+    (Number(home?.points || 0) - Number(away?.points || 0)) * 0.008 +
+    (Number(home?.goalDifference || 0) - Number(away?.goalDifference || 0)) * 0.004;
+
+  return clampNumber(0.5 + (homeWeight - awayWeight) * 0.011 + rankEdge + groupEdge, 0.12, 0.88);
+};
+
+const knockoutExpectedGoals = (home, away) => {
+  const homeWeight = Number(home?.weight || home?.strength?.overall || 50);
+  const awayWeight = Number(away?.weight || away?.strength?.overall || 50);
+  const diff = homeWeight - awayWeight;
+
+  return {
+    home: clampNumber(1.15 + diff / 38 + Number(home?.goalsFor || 0) * 0.025, 0.25, 3.8),
+    away: clampNumber(1.05 - diff / 40 + Number(away?.goalsFor || 0) * 0.025, 0.25, 3.8),
+  };
 };
 
 const projectedKnockoutScore = (home, away, homeWins, rng = null) => {
-  const diff = Math.abs(Number(home?.weight || 50) - Number(away?.weight || 50));
-  const loserGoals = rng
-    ? clampNumber(Math.floor(rng() * 3), 0, diff > 14 ? 1 : 2)
-    : diff > 16
-      ? 0
-      : diff > 6
-        ? 1
-        : 0;
-  const margin = rng ? (diff > 14 && rng() > 0.35 ? 2 : 1) : diff > 16 ? 2 : 1;
-  const winnerGoals = clampNumber(loserGoals + margin, 1, 5);
-
-  return homeWins ? { home: winnerGoals, away: loserGoals } : { home: loserGoals, away: winnerGoals };
+  const expected = knockoutExpectedGoals(home, away);
+  const generator = rng || seededRandom(hashString(`${safeTeamKey(home)}-${safeTeamKey(away)}`));
+  const score = forceOutcomeScore(expected, homeWins ? "home" : "away", generator);
+  return { home: score.home, away: score.away };
 };
 
 const knockoutResultFor = (match, home, away, rng = null) => {
@@ -1381,12 +1448,65 @@ const normalizeSlotText = (value) =>
 const buildBracketProjectionContext = (rounds, simulation) =>
   simulateFullBracket(rounds, simulation.groups, simulation.thirdRows);
 
-const buildOpeningRoundContext = (rounds, simulation) => {
-  const context = createBracketContext(simulation.groups, simulation.thirdRows);
+const currentBracketGroups = () =>
+  (appData.groups || []).map((group) => {
+    const teams = (group.teams || [])
+      .map((row) => {
+        const team = appData.teams[row.teamKey] || {};
+
+        return {
+          ...team,
+          ...row,
+          teamKey: row.teamKey,
+          name: row.name || team.name,
+          logo: row.logo || team.logo,
+          flagCode: row.flagCode || team.flagCode,
+          weight: Number(team.weight || row.weight || 0),
+          fifaRank: Number(team.fifaRank || row.fifaRank || 999),
+          groupName: group.name,
+          currentPosition: Number(row.position || 99),
+        };
+      })
+      .sort((a, b) => a.currentPosition - b.currentPosition)
+      .map((row, index) => ({
+        ...row,
+        projectedPosition: row.currentPosition || index + 1,
+      }));
+
+    return {
+      ...group,
+      teams,
+    };
+  });
+
+const currentThirdRows = (groups) =>
+  groups
+    .map((group) => group.teams[2] && { ...group.teams[2], groupName: group.name })
+    .filter(Boolean)
+    .sort(sortProjectionRows)
+    .map((row, index) => ({
+      ...row,
+      thirdPlaceRank: index + 1,
+      projectedThirdQualified: index < 8,
+    }));
+
+const currentSlotParticipant = (team) =>
+  team
+    ? {
+        ...team,
+        projectedFromSlot: false,
+        currentSlotParticipant: true,
+      }
+    : team;
+
+const buildOpeningRoundContext = (rounds) => {
+  const groups = currentBracketGroups();
+  const thirdRows = currentThirdRows(groups);
+  const context = createBracketContext(groups, thirdRows);
 
   roundMatches(rounds, "round32").forEach((match) => {
-    context.participants[`${match.id}:home`] = resolveBracketParticipant(match, "home", context);
-    context.participants[`${match.id}:away`] = resolveBracketParticipant(match, "away", context);
+    context.participants[`${match.id}:home`] = currentSlotParticipant(resolveBracketParticipant(match, "home", context));
+    context.participants[`${match.id}:away`] = currentSlotParticipant(resolveBracketParticipant(match, "away", context));
   });
 
   return context;
@@ -1482,12 +1602,12 @@ const resolveBracketParticipant = (match, side, context) => {
   if (advancedTeam) return advancedTeam;
   const winnerGroup = /Vencedor do Grupo ([A-Z])/i.exec(slot);
   if (winnerGroup) {
-    return projectedTeamFromGroup(context, winnerGroup[1], 1, team, "1º do grupo");
+    return projectedTeamFromGroup(context, winnerGroup[1], 1, team, `1º Grupo ${winnerGroup[1]}`);
   }
 
   const runnerUpGroup = /2.*lugar do Grupo ([A-Z])/i.exec(slot);
   if (runnerUpGroup) {
-    return projectedTeamFromGroup(context, runnerUpGroup[1], 2, team, "2º do grupo");
+    return projectedTeamFromGroup(context, runnerUpGroup[1], 2, team, `2º Grupo ${runnerUpGroup[1]}`);
   }
 
   const thirdPlaceGroups = /3.*colocado dos Grupos ([A-Z/]+)/i.exec(slot);
@@ -1545,7 +1665,7 @@ const projectedThirdTeam = (context, groupLetters, placeholderTeam) => {
   return {
     ...projected,
     projectedFromSlot: true,
-    projectionSlot: "Melhor 3º",
+    projectionSlot: `3º ${projected.groupName}`,
   };
 };
 
@@ -1562,13 +1682,21 @@ const bracketScoreFor = (match, home, away) => {
   return scoreFor(match);
 };
 
-const renderBracketTeam = (team, score, simulationMode = false) => `
-  <div class="bracket-team${simulationMode && team?.projectedFromSlot ? " projected" : ""}">
+const renderBracketTeam = (team, score, simulationMode = false, options = {}) => {
+  const hasScore = score !== null && score !== undefined && score !== "";
+  const showSlot = options.showSlot && team?.projectionSlot;
+
+  return `
+  <div class="bracket-team${simulationMode && team?.projectedFromSlot ? " projected" : ""}${hasScore ? "" : " no-score"}">
     ${teamMark(team)}
-    <span title="${team?.name || ""}">${team?.name || "A definir"}</span>
-    <strong>${score}</strong>
+    <span class="bracket-team-name" title="${team?.name || ""}">
+      <span>${team?.name || "A definir"}</span>
+      ${showSlot ? `<em>${team.projectionSlot}</em>` : ""}
+    </span>
+    ${hasScore ? `<strong>${score}</strong>` : ""}
   </div>
 `;
+};
 
 const renderBracketProbability = (home, away) => {
   const homeTitle = Number(home?.probabilities?.champion || 0);
@@ -1670,12 +1798,11 @@ const renderKnockoutBracket = () => {
     return;
   }
 
-  const simulation = buildRound32Simulation();
   const rounds = groupKnockoutRounds(knockoutMatches);
-  const openingRoundContext = buildOpeningRoundContext(rounds, simulation);
+  const openingRoundContext = buildOpeningRoundContext(rounds);
 
   container.innerHTML = `
-    <div class="bracket-instructions official-note">Agenda do mata-mata com vagas preenchidas pela tabela atual. A projeção completa fica em Simulação &gt; Chave.</div>
+    <div class="bracket-instructions official-note">Chave preenchida pelas posições atuais dos grupos. Sem placar simulado; se a tabela mudar, os confrontos mudam.</div>
     ${renderBracketBoard(rounds, openingRoundContext, { mode: "official" })}
   `;
 
@@ -1762,16 +1889,22 @@ const renderBracketMatch = (match, side = "", projectionContext = null, options 
   const projectedAway = projectionContext?.participants?.[`${match.id}:away`];
   const home = projectedHome || appData.teams[match.home];
   const away = projectedAway || appData.teams[match.away];
-  const projectedResult = projectionContext?.results?.[match.id];
-  const score = projectedResult ? { ...projectedResult.score, label: "Simulação", chance: "Simulação", kind: "prediction" } : bracketScoreFor(match, home, away);
   const simulationMode = options.mode === "simulation";
+  const officialMode = options.mode === "official";
+  const projectedResult = simulationMode ? projectionContext?.results?.[match.id] : null;
+  const displayScore =
+    officialMode && !(isFinished(match) || isLive(match))
+      ? null
+      : projectedResult
+        ? { ...projectedResult.score, label: "Simulação", chance: "Simulação", kind: "prediction" }
+        : bracketScoreFor(match, home, away);
   const projected = simulationMode && Boolean(home?.projectedFromSlot || away?.projectedFromSlot);
 
   return `
     <article class="bracket-match ${side}${simulationMode ? " simulated" : ""}${projected ? " projected" : ""}" data-match-id="${match.id}">
       ${simulationMode ? `<span class="simulation-badge">Simulado</span>` : ""}
-      ${renderBracketTeam(home, score.home, simulationMode)}
-      ${renderBracketTeam(away, score.away, simulationMode)}
+      ${renderBracketTeam(home, displayScore?.home, simulationMode, { showSlot: officialMode })}
+      ${renderBracketTeam(away, displayScore?.away, simulationMode, { showSlot: officialMode })}
       <small>${matchDisplayDay(match)} - ${isFinished(match) ? "Finalizado" : matchDisplayTime(match)}</small>
       ${simulationMode ? renderBracketProbability(home, away) : ""}
     </article>

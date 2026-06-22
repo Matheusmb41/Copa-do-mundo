@@ -1302,6 +1302,10 @@ body.modal-open {
   font-size: 12px;
 }
 
+.bracket-team.no-score {
+  grid-template-columns: auto 1fr;
+}
+
 .bracket-team.projected strong {
   color: #9fc4ff;
 }
@@ -1314,6 +1318,26 @@ body.modal-open {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.bracket-team .bracket-team-name {
+  display: grid;
+  gap: 1px;
+  min-width: 0;
+  white-space: normal;
+}
+
+.bracket-team .bracket-team-name span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bracket-team .bracket-team-name em {
+  color: var(--muted);
+  font-size: 10px;
+  font-style: normal;
+  line-height: 1.1;
 }
 
 .bracket-match small {
