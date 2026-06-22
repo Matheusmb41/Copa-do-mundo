@@ -11,6 +11,7 @@
       <nav class="screen-menu" aria-label="Navegação principal">
         <button class="menu-button active" type="button" data-screen-target="matches">Jogos</button>
         <button class="menu-button" type="button" data-screen-target="groups">Grupos</button>
+        <button class="menu-button" type="button" data-screen-target="simulation">Simulação</button>
         <button class="menu-button" type="button" data-screen-target="weights">Ranking dos times</button>
         <button class="menu-button" type="button" data-screen-target="stats">Estatísticas</button>
       </nav>
@@ -24,6 +25,16 @@
         <section class="screen-view groups-panel" data-screen="groups">
           <h2>Classificação dos grupos</h2>
           <div id="groupsGrid" class="groups-grid"></div>
+        </section>
+
+        <section class="screen-view simulation-panel" data-screen="simulation">
+          <h2>Simulação da Copa</h2>
+          <section class="simulation-submenu" aria-label="Tipo de simulação">
+            <button class="subnav-button active" type="button" data-simulation-view="qualified">Classificados</button>
+            <button class="subnav-button" type="button" data-simulation-view="bracket">Chave</button>
+            <button class="subnav-button" type="button" data-simulation-view="champion">Campeão</button>
+          </section>
+          <div id="simulationContent" class="simulation-content"></div>
         </section>
 
         <aside class="screen-view summary-panel" data-screen="weights">

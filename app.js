@@ -3,6 +3,7 @@ let selectedMatchId = null;
 let selectedTeamKey = null;
 let predictionHistory = null;
 let gamesView = "groups";
+let simulationView = "qualified";
 let knockoutSimulationCache = null;
 const DATA_REFRESH_MS = 1000 * 60 * 2;
 const KNOCKOUT_SIMULATION_RUNS = 30000;
@@ -1133,30 +1134,39 @@ const renderRound32Simulation = () => {
 
   return `
     <section class="round32-simulation">
-      <div class="simulation-head">
-        <h3>Simulação da Copa</h3>
-        <div class="simulation-kpis">
-          ${simulationKpi("Cenários", simulation.runs)}
-          ${simulationKpi("Vagas diretas", 24)}
-          ${simulationKpi("Melhores terceiros", 8)}
-          ${simulationKpi("Favorito ao título", simulation.championRows[0] ? `${simulation.championRows[0].name} ${simulation.championRows[0].probabilities.champion}%` : "-")}
-        </div>
-      </div>
-      <div class="simulation-metrics" aria-label="Métricas da simulação">
-        <span>Tabela real</span>
-        <span>Força atual</span>
-        <span>Probabilidades</span>
-        <span>Cenários</span>
-        <span>Desempates</span>
-        <span>Campeão</span>
-      </div>
-      ${renderChampionSimulation(simulation.championRows)}
+      ${renderSimulationSummary(simulation)}
       <div class="qualification-grid">
         ${simulation.groups.map(renderQualificationGroup).join("")}
       </div>
       ${renderThirdPlaceSimulation(simulation.thirdRows)}
     </section>
   `;
+};
+
+const renderSimulationSummary = (simulation) => `
+  <div class="simulation-head">
+    <h3>${simulationTitle()}</h3>
+    <div class="simulation-kpis">
+      ${simulationKpi("Cenários", simulation.runs)}
+      ${simulationKpi("Vagas diretas", 24)}
+      ${simulationKpi("Melhores terceiros", 8)}
+      ${simulationKpi("Favorito ao título", simulation.championRows[0] ? `${simulation.championRows[0].name} ${simulation.championRows[0].probabilities.champion}%` : "-")}
+    </div>
+  </div>
+  <div class="simulation-metrics" aria-label="Métricas da simulação">
+    <span>Tabela real</span>
+    <span>Força atual</span>
+    <span>Probabilidades</span>
+    <span>Cenários</span>
+    <span>Desempates</span>
+    <span>Campeão</span>
+  </div>
+`;
+
+const simulationTitle = () => {
+  if (simulationView === "bracket") return "Chave simulada";
+  if (simulationView === "champion") return "Favoritos ao título";
+  return "Classificados projetados";
 };
 
 const simulationKpi = (label, value) => `
@@ -1286,6 +1296,28 @@ const renderThirdPlaceSimulation = (thirdRows) => `
   </article>
 `;
 
+const renderChampionSimulationView = () => {
+  const simulation = buildRound32Simulation();
+
+  if (!simulation.groups.length) {
+    return `
+      <section class="round32-simulation">
+        <article class="details-card">
+          <h3>Simulação indisponível</h3>
+          <p>A fonte ainda não retornou jogos suficientes da fase de grupos.</p>
+        </article>
+      </section>
+    `;
+  }
+
+  return `
+    <section class="round32-simulation">
+      ${renderSimulationSummary(simulation)}
+      ${renderChampionSimulation(simulation.championRows)}
+    </section>
+  `;
+};
+
 const roundMatches = (rounds, key) => rounds.find((round) => round.key === key)?.matches || [];
 
 const safeTeamKey = (team) => team?.teamKey || team?.key || team?.sourceId || team?.name;
@@ -1348,6 +1380,17 @@ const normalizeSlotText = (value) =>
 
 const buildBracketProjectionContext = (rounds, simulation) =>
   simulateFullBracket(rounds, simulation.groups, simulation.thirdRows);
+
+const buildOpeningRoundContext = (rounds, simulation) => {
+  const context = createBracketContext(simulation.groups, simulation.thirdRows);
+
+  roundMatches(rounds, "round32").forEach((match) => {
+    context.participants[`${match.id}:home`] = resolveBracketParticipant(match, "home", context);
+    context.participants[`${match.id}:away`] = resolveBracketParticipant(match, "away", context);
+  });
+
+  return context;
+};
 
 const createBracketContext = (groups, thirdRows) => ({
   participants: {},
@@ -1519,42 +1562,37 @@ const bracketScoreFor = (match, home, away) => {
   return scoreFor(match);
 };
 
-const renderBracketTeam = (team, score) => `
-  <div class="bracket-team${team?.projectedFromSlot ? " projected" : ""}">
+const renderBracketTeam = (team, score, simulationMode = false) => `
+  <div class="bracket-team${simulationMode && team?.projectedFromSlot ? " projected" : ""}">
     ${teamMark(team)}
     <span title="${team?.name || ""}">${team?.name || "A definir"}</span>
     <strong>${score}</strong>
   </div>
 `;
 
+const renderBracketProbability = (home, away) => {
+  const homeTitle = Number(home?.probabilities?.champion || 0);
+  const awayTitle = Number(away?.probabilities?.champion || 0);
+  const homeWin = Math.round(knockoutWinChance(home, away) * 100);
+  const awayWin = 100 - homeWin;
+
+  return `
+    <div class="bracket-probability">
+      <span>Título ${homeTitle}% / ${awayTitle}%</span>
+      <span>Vitória ${homeWin}% / ${awayWin}%</span>
+    </div>
+  `;
+};
+
 const pickMatches = (matches, gameNumbers) => gameNumbers.map((number) => matches[number - 1]).filter(Boolean);
 
-const renderKnockoutBracket = () => {
-  const container = document.querySelector("#knockoutBracket");
-  if (!container) return;
-
-  const simulation = buildRound32Simulation();
-  const simulationHtml = renderRound32Simulation();
-  const knockoutMatches = appData.matches.filter(isKnockoutMatch);
-  if (!knockoutMatches.length) {
-    container.innerHTML = `
-      ${simulationHtml}
-      <article class="details-card">
-        <h3>Eliminatórias indisponíveis</h3>
-        <p>A fonte ainda não retornou os confrontos do mata-mata.</p>
-      </article>
-    `;
-    return;
-  }
-
-  const rounds = groupKnockoutRounds(knockoutMatches);
-  const round32 = rounds.find((round) => round.key === "round32")?.matches || [];
-  const round16 = rounds.find((round) => round.key === "round16")?.matches || [];
-  const quarters = rounds.find((round) => round.key === "quarterfinal")?.matches || [];
-  const semis = rounds.find((round) => round.key === "semifinal")?.matches || [];
-  const thirdPlace = rounds.find((round) => round.key === "thirdPlace")?.matches?.[0];
-  const final = rounds.find((round) => round.key === "Final")?.matches?.[0];
-  const bracketProjectionContext = buildBracketProjectionContext(rounds, simulation);
+const renderBracketBoard = (rounds, bracketProjectionContext, options = {}) => {
+  const round32 = roundMatches(rounds, "round32");
+  const round16 = roundMatches(rounds, "round16");
+  const quarters = roundMatches(rounds, "quarterfinal");
+  const semis = roundMatches(rounds, "semifinal");
+  const thirdPlace = roundMatches(rounds, "thirdPlace")[0];
+  const final = roundMatches(rounds, "Final")[0];
 
   const leftRounds = [
     { name: "16 avos de final", matches: pickMatches(round32, [1, 3, 2, 5, 11, 12, 9, 10]) },
@@ -1569,28 +1607,101 @@ const renderKnockoutBracket = () => {
     { name: "16 avos de final", matches: pickMatches(round32, [4, 6, 7, 8, 14, 16, 13, 15]) },
   ];
 
-  container.innerHTML = `
-    ${simulationHtml}
-    <div class="bracket-instructions">Clique em um confronto para ver a premonição.</div>
+  return `
     <div class="bracket-scroll">
       <div class="bracket-board bracket-board-split">
         <div class="bracket-wing left-wing">
-          ${leftRounds.map((round, index) => renderBracketColumn(round, "left", index, bracketProjectionContext)).join("")}
+          ${leftRounds.map((round, index) => renderBracketColumn(round, "left", index, bracketProjectionContext, options)).join("")}
         </div>
         <div class="bracket-center">
           <div class="center-main">
-            ${final ? renderCenterMatch("Final", final, "final-match", bracketProjectionContext) : ""}
+            ${final ? renderCenterMatch("Final", final, "final-match", bracketProjectionContext, options) : ""}
           </div>
-          ${thirdPlace ? renderCenterMatch("3º lugar", thirdPlace, "third-place-match", bracketProjectionContext) : ""}
+          ${thirdPlace ? renderCenterMatch("3º lugar", thirdPlace, "third-place-match", bracketProjectionContext, options) : ""}
         </div>
         <div class="bracket-wing right-wing">
-          ${rightRounds.map((round, index) => renderBracketColumn(round, "right", index, bracketProjectionContext)).join("")}
+          ${rightRounds.map((round, index) => renderBracketColumn(round, "right", index, bracketProjectionContext, options)).join("")}
         </div>
       </div>
     </div>
   `;
+};
 
-  document.querySelectorAll(".bracket-match").forEach((card) => {
+const renderSimulationBracketView = () => {
+  const simulation = buildRound32Simulation();
+  const knockoutMatches = (appData.matches || []).filter(isKnockoutMatch);
+
+  if (!knockoutMatches.length) {
+    return `
+      <section class="round32-simulation">
+        ${renderSimulationSummary(simulation)}
+        <article class="details-card">
+          <h3>Chave indisponível</h3>
+          <p>A fonte ainda não retornou os confrontos do mata-mata.</p>
+        </article>
+      </section>
+    `;
+  }
+
+  const rounds = groupKnockoutRounds(knockoutMatches);
+  const bracketProjectionContext = buildBracketProjectionContext(rounds, simulation);
+
+  return `
+    <section class="round32-simulation simulation-bracket-view">
+      ${renderSimulationSummary(simulation)}
+      <div class="bracket-instructions simulation-note">Chave simulada com os classificados projetados e avanço calculado pela força atual.</div>
+      ${renderBracketBoard(rounds, bracketProjectionContext, { mode: "simulation" })}
+    </section>
+  `;
+};
+
+const renderKnockoutBracket = () => {
+  const container = document.querySelector("#knockoutBracket");
+  if (!container) return;
+
+  const knockoutMatches = appData.matches.filter(isKnockoutMatch);
+  if (!knockoutMatches.length) {
+    container.innerHTML = `
+      <article class="details-card">
+        <h3>Eliminatórias indisponíveis</h3>
+        <p>A fonte ainda não retornou os confrontos do mata-mata.</p>
+      </article>
+    `;
+    return;
+  }
+
+  const simulation = buildRound32Simulation();
+  const rounds = groupKnockoutRounds(knockoutMatches);
+  const openingRoundContext = buildOpeningRoundContext(rounds, simulation);
+
+  container.innerHTML = `
+    <div class="bracket-instructions official-note">Agenda do mata-mata com vagas preenchidas pela tabela atual. A projeção completa fica em Simulação &gt; Chave.</div>
+    ${renderBracketBoard(rounds, openingRoundContext, { mode: "official" })}
+  `;
+
+  bindBracketCards(container);
+};
+
+const renderSimulation = () => {
+  const container = document.querySelector("#simulationContent");
+  if (!container) return;
+
+  if (simulationView === "bracket") {
+    container.innerHTML = renderSimulationBracketView();
+    bindBracketCards(container);
+    return;
+  }
+
+  if (simulationView === "champion") {
+    container.innerHTML = renderChampionSimulationView();
+    return;
+  }
+
+  container.innerHTML = renderRound32Simulation();
+};
+
+const bindBracketCards = (root = document) => {
+  root.querySelectorAll(".bracket-match").forEach((card) => {
     card.addEventListener("click", () => {
       selectedMatchId = Number(card.dataset.matchId);
       renderDetails(selectedMatchId);
@@ -1630,36 +1741,39 @@ const renderBracketRound = (round) => `
   </section>
 `;
 
-const renderBracketColumn = (round, side, index, projectionContext) => `
+const renderBracketColumn = (round, side, index, projectionContext, options = {}) => `
   <section class="bracket-column ${side} level-${index + 1}">
     <h3>${round.name}</h3>
     <div class="bracket-column-matches">
-      ${round.matches.map((match) => renderBracketMatch(match, side, projectionContext)).join("")}
+      ${round.matches.map((match) => renderBracketMatch(match, side, projectionContext, options)).join("")}
     </div>
   </section>
 `;
 
-const renderCenterMatch = (label, match, extraClass = "", projectionContext) => `
+const renderCenterMatch = (label, match, extraClass = "", projectionContext, options = {}) => `
   <section class="center-match-block ${extraClass}">
     <h3>${label}</h3>
-    ${renderBracketMatch(match, "center", projectionContext)}
+    ${renderBracketMatch(match, "center", projectionContext, options)}
   </section>
 `;
 
-const renderBracketMatch = (match, side = "", projectionContext = null) => {
+const renderBracketMatch = (match, side = "", projectionContext = null, options = {}) => {
   const projectedHome = projectionContext?.participants?.[`${match.id}:home`];
   const projectedAway = projectionContext?.participants?.[`${match.id}:away`];
   const home = projectedHome || appData.teams[match.home];
   const away = projectedAway || appData.teams[match.away];
   const projectedResult = projectionContext?.results?.[match.id];
   const score = projectedResult ? { ...projectedResult.score, label: "Simulação", chance: "Simulação", kind: "prediction" } : bracketScoreFor(match, home, away);
-  const projected = Boolean(home?.projectedFromSlot || away?.projectedFromSlot);
+  const simulationMode = options.mode === "simulation";
+  const projected = simulationMode && Boolean(home?.projectedFromSlot || away?.projectedFromSlot);
 
   return `
-    <article class="bracket-match ${side}${projected ? " projected" : ""}" data-match-id="${match.id}">
-      ${renderBracketTeam(home, score.home)}
-      ${renderBracketTeam(away, score.away)}
+    <article class="bracket-match ${side}${simulationMode ? " simulated" : ""}${projected ? " projected" : ""}" data-match-id="${match.id}">
+      ${simulationMode ? `<span class="simulation-badge">Simulado</span>` : ""}
+      ${renderBracketTeam(home, score.home, simulationMode)}
+      ${renderBracketTeam(away, score.away, simulationMode)}
       <small>${matchDisplayDay(match)} - ${isFinished(match) ? "Finalizado" : matchDisplayTime(match)}</small>
+      ${simulationMode ? renderBracketProbability(home, away) : ""}
     </article>
   `;
 };
@@ -1935,6 +2049,7 @@ const renderApp = () => {
   renderPredictionStats();
   renderMatches();
   renderKnockoutBracket();
+  renderSimulation();
   renderDetails();
 };
 
@@ -2004,6 +2119,9 @@ document.querySelectorAll("[data-screen-target]").forEach((button) => {
       requestAnimationFrame(scrollToTop);
     } else if (button.dataset.screenTarget === "groups") {
       requestAnimationFrame(scrollToTop);
+    } else if (button.dataset.screenTarget === "simulation") {
+      renderSimulation();
+      requestAnimationFrame(scrollToTop);
     } else if (button.dataset.screenTarget === "stats") {
       requestAnimationFrame(scrollToTop);
     }
@@ -2023,6 +2141,15 @@ document.querySelectorAll("[data-games-view]").forEach((button) => {
       renderKnockoutBracket();
       requestAnimationFrame(scrollToTop);
     }
+  });
+});
+
+document.querySelectorAll("[data-simulation-view]").forEach((button) => {
+  button.addEventListener("click", () => {
+    simulationView = button.dataset.simulationView;
+    document.querySelectorAll("[data-simulation-view]").forEach((item) => item.classList.toggle("active", item === button));
+    renderSimulation();
+    requestAnimationFrame(scrollToTop);
   });
 });
 
