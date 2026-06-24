@@ -1,4 +1,4 @@
-const CACHE_NAME = "copa-2026-v1";
+const CACHE_NAME = "copa-2026-v2";
 const CORE_ASSETS = ["/", "/index.html", "/styles.css", "/app.js", "/favicon.svg", "/manifest.webmanifest"];
 
 self.addEventListener("install", (event) => {
@@ -27,7 +27,7 @@ self.addEventListener("fetch", (event) => {
   }
 
   event.respondWith(
-    fetch(event.request)
+    fetch(event.request, { cache: "no-store" })
       .then((response) => {
         const copy = response.clone();
         caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));

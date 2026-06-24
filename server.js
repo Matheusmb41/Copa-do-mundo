@@ -3460,6 +3460,7 @@ function serveStatic(req, res) {
 
     res.writeHead(200, {
       "Content-Type": types[ext] || "application/octet-stream",
+      "Cache-Control": "no-cache, no-store, must-revalidate",
     });
     res.end(data);
   });
