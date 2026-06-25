@@ -2963,11 +2963,7 @@ async function updatePredictionHistory(matches, teams) {
         changed = true;
       } else {
         const evaluated = ensureEvaluatedPrediction(existing, recoveredPrediction);
-        if (evaluated.changed) {
-          changed = true;
-        }
-
-        if (evaluated.prediction && !existing.evaluation) {
+        if (evaluated.prediction && (evaluated.changed || !existing.evaluation)) {
           existing.evaluation = evaluatePrediction(evaluated.prediction, {
             home: existing.result.homeGoals,
             away: existing.result.awayGoals,
@@ -3078,12 +3074,17 @@ function ensureEvaluatedPrediction(record, fallbackPrediction) {
     record.predictionRecovered = true;
   }
 
-  if (prediction && !record.evaluatedPrediction) {
+  if (prediction && !samePredictionScore(record.evaluatedPrediction, prediction)) {
     record.evaluatedPrediction = prediction;
     changed = true;
   }
 
-  return { prediction: record.evaluatedPrediction || prediction || null, changed };
+  return { prediction: prediction || null, changed };
+}
+
+function samePredictionScore(first, second) {
+  if (!first || !second) return false;
+  return Number(first.homeGoals) === Number(second.homeGoals) && Number(first.awayGoals) === Number(second.awayGoals);
 }
 
 function snapshotPrediction(match, teams, prediction = match.prediction) {
@@ -3154,7 +3155,7 @@ function evaluatePrediction(prediction, actualScore) {
 }
 
 function predictionForEvaluation(record) {
-  return record?.evaluatedPrediction || record?.latestPrediction || record?.initialPrediction || null;
+  return record?.initialPrediction || record?.evaluatedPrediction || record?.latestPrediction || null;
 }
 
 function normalizedEvaluationRecord(record) {

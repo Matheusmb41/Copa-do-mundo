@@ -524,7 +524,7 @@ const normalizeHistoryEvaluation = (match) => {
   };
 };
 
-const predictionForEvaluation = (match) => match?.evaluatedPrediction || match?.latestPrediction || match?.initialPrediction || null;
+const predictionForEvaluation = (match) => match?.initialPrediction || match?.evaluatedPrediction || match?.latestPrediction || null;
 
 const historyDirection = (homeGoals, awayGoals) => {
   if (homeGoals > awayGoals) return "home";

@@ -175,6 +175,131 @@ test("premonição inicial fica congelada quando o jogo entra ao vivo", async ()
   assert.equal(record.liveScore.awayGoals, 1);
 });
 
+test("avalia o placar inicial mesmo quando a ultima premonicao mudou", async () => {
+  resetHistory();
+
+  const teams = {
+    home: { name: "Escócia" },
+    away: { name: "Brasil" },
+  };
+
+  await _test.updatePredictionHistory(
+    [
+      {
+        id: 11,
+        status: "NS",
+        group: "Grupo C",
+        timestamp: 1100,
+        home: "home",
+        away: "away",
+        prediction: {
+          homeGoals: 0,
+          awayGoals: 3,
+          homeChance: 6,
+          drawChance: 10,
+          awayChance: 84,
+          favoriteChance: 84,
+        },
+      },
+    ],
+    teams
+  );
+
+  await _test.updatePredictionHistory(
+    [
+      {
+        id: 11,
+        status: "NS",
+        group: "Grupo C",
+        timestamp: 1100,
+        home: "home",
+        away: "away",
+        prediction: {
+          homeGoals: 0,
+          awayGoals: 2,
+          homeChance: 8,
+          drawChance: 12,
+          awayChance: 80,
+          favoriteChance: 80,
+        },
+      },
+    ],
+    teams
+  );
+
+  await _test.updatePredictionHistory(
+    [
+      {
+        id: 11,
+        status: "FT",
+        group: "Grupo C",
+        timestamp: 1100,
+        home: "home",
+        away: "away",
+        actualScore: { home: 0, away: 3 },
+        prediction: {
+          homeGoals: 0,
+          awayGoals: 2,
+          homeChance: 8,
+          drawChance: 12,
+          awayChance: 80,
+          favoriteChance: 80,
+        },
+      },
+    ],
+    teams
+  );
+
+  const record = _test.getPredictionHistory().matches["11"];
+  assert.equal(record.initialPrediction.awayGoals, 3);
+  assert.equal(record.latestPrediction.awayGoals, 2);
+  assert.equal(record.evaluatedPrediction.awayGoals, 3);
+  assert.equal(record.evaluation.exactScore, true);
+});
+
+test("corrige avaliacao antiga que usou a ultima premonicao", async () => {
+  resetHistory();
+  _test.setPredictionHistory({
+    version: 1,
+    matches: {
+      "12": {
+        id: 12,
+        group: "Grupo C",
+        date: 1200,
+        home: "Escócia",
+        away: "Brasil",
+        initialPrediction: { homeGoals: 0, awayGoals: 3, winner: "away", favoriteChance: 84 },
+        latestPrediction: { homeGoals: 0, awayGoals: 2, winner: "away", favoriteChance: 80 },
+        evaluatedPrediction: { homeGoals: 0, awayGoals: 2, winner: "away", favoriteChance: 80 },
+        result: { homeGoals: 0, awayGoals: 3, winner: "away" },
+        evaluation: { exactScore: false, direction: true },
+      },
+    },
+  });
+
+  await _test.updatePredictionHistory(
+    [
+      {
+        id: 12,
+        status: "FT",
+        group: "Grupo C",
+        timestamp: 1200,
+        home: "home",
+        away: "away",
+        actualScore: { home: 0, away: 3 },
+      },
+    ],
+    {
+      home: { name: "Escócia" },
+      away: { name: "Brasil" },
+    }
+  );
+
+  const record = _test.getPredictionHistory().matches["12"];
+  assert.equal(record.evaluatedPrediction.awayGoals, 3);
+  assert.equal(record.evaluation.exactScore, true);
+});
+
 test("erro medio de gols reduz volume quando o modelo superestima placares", () => {
   _test.setPredictionHistory({
     version: 1,
