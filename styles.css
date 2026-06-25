@@ -949,6 +949,56 @@ body.modal-open {
   color: var(--muted);
 }
 
+.likely-scorelines {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+
+.likely-scorelines > strong {
+  font-size: 12px;
+}
+
+.likely-scoreline-list {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.likely-scoreline {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 3px 8px;
+  min-width: 0;
+  padding: 8px;
+  border-left: 2px solid var(--line);
+  background: #1a1d23;
+}
+
+.likely-scoreline.primary {
+  border-left-color: var(--green);
+}
+
+.likely-scoreline span {
+  grid-column: 1 / -1;
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.likely-scoreline strong {
+  font-size: 14px;
+}
+
+.likely-scoreline em {
+  color: var(--green);
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 700;
+  text-align: right;
+}
+
 .probabilities {
   display: grid;
   gap: 8px;
@@ -1672,6 +1722,10 @@ body.modal-open {
   }
 
   .history-row {
+    grid-template-columns: 1fr;
+  }
+
+  .likely-scoreline-list {
     grid-template-columns: 1fr;
   }
 }

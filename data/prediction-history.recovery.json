@@ -1,0 +1,275 @@
+{
+  "version": 1,
+  "matches": {
+    "760468": {
+      "initialPrediction": {
+        "home": "Equador",
+        "away": "Alemanha",
+        "homeGoals": 0,
+        "awayGoals": 2,
+        "expectedGoals": { "home": 0.15, "away": 2.26 },
+        "homeChance": 10,
+        "drawChance": 11,
+        "awayChance": 79,
+        "favoriteChance": 79,
+        "winner": "away",
+        "capturedAt": "2026-06-20T02:59:20.212Z"
+      }
+    },
+    "760469": {
+      "initialPrediction": {
+        "home": "Paraguai",
+        "away": "Australia",
+        "homeGoals": 0,
+        "awayGoals": 2,
+        "expectedGoals": { "home": 0.49, "away": 1.86 },
+        "homeChance": 18,
+        "drawChance": 16,
+        "awayChance": 66,
+        "favoriteChance": 66,
+        "winner": "away",
+        "capturedAt": "2026-06-20T02:59:20.212Z"
+      }
+    },
+    "760470": {
+      "initialPrediction": {
+        "home": "Turquia",
+        "away": "Estados Unidos",
+        "homeGoals": 0,
+        "awayGoals": 2,
+        "expectedGoals": { "home": 0.34, "away": 2.03 },
+        "homeChance": 15,
+        "drawChance": 14,
+        "awayChance": 71,
+        "favoriteChance": 71,
+        "winner": "away",
+        "capturedAt": "2026-06-20T02:59:20.212Z"
+      }
+    },
+    "760471": {
+      "initialPrediction": {
+        "home": "Japao",
+        "away": "Suecia",
+        "homeGoals": 2,
+        "awayGoals": 1,
+        "expectedGoals": { "home": 1.52, "away": 0.97 },
+        "homeChance": 45,
+        "drawChance": 25,
+        "awayChance": 30,
+        "favoriteChance": 45,
+        "winner": "home",
+        "capturedAt": "2026-06-20T02:59:20.212Z"
+      }
+    },
+    "760472": {
+      "initialPrediction": {
+        "home": "Tunisia",
+        "away": "Paises Baixos",
+        "homeGoals": 0,
+        "awayGoals": 3,
+        "expectedGoals": { "home": 0.15, "away": 2.54 },
+        "homeChance": 6,
+        "drawChance": 10,
+        "awayChance": 84,
+        "favoriteChance": 84,
+        "winner": "away",
+        "capturedAt": "2026-06-20T02:59:20.212Z"
+      }
+    },
+    "760473": {
+      "initialPrediction": {
+        "home": "Curacao",
+        "away": "Costa do Marfim",
+        "homeGoals": 0,
+        "awayGoals": 2,
+        "expectedGoals": { "home": 0.42, "away": 1.97 },
+        "homeChance": 16,
+        "drawChance": 15,
+        "awayChance": 69,
+        "favoriteChance": 69,
+        "winner": "away",
+        "capturedAt": "2026-06-20T02:59:20.212Z"
+      }
+    },
+    "760474": {
+      "initialPrediction": {
+        "home": "Senegal",
+        "away": "Iraque",
+        "homeGoals": 1,
+        "awayGoals": 1,
+        "expectedGoals": { "home": 1.23, "away": 1.19 },
+        "homeChance": 36,
+        "drawChance": 28,
+        "awayChance": 35,
+        "favoriteChance": 36,
+        "winner": "draw",
+        "capturedAt": "2026-06-20T02:59:20.212Z"
+      }
+    },
+    "760475": {
+      "initialPrediction": {
+        "home": "Noruega",
+        "away": "Franca",
+        "homeGoals": 0,
+        "awayGoals": 3,
+        "expectedGoals": { "home": 0.15, "away": 3.2 },
+        "homeChance": 6,
+        "drawChance": 10,
+        "awayChance": 84,
+        "favoriteChance": 84,
+        "winner": "away",
+        "capturedAt": "2026-06-20T02:59:20.212Z"
+      }
+    },
+    "760476": {
+      "initialPrediction": {
+        "home": "Egito",
+        "away": "Ira",
+        "homeGoals": 1,
+        "awayGoals": 1,
+        "expectedGoals": { "home": 0.96, "away": 1.4 },
+        "homeChance": 30,
+        "drawChance": 25,
+        "awayChance": 45,
+        "favoriteChance": 45,
+        "winner": "draw",
+        "capturedAt": "2026-06-20T02:59:20.212Z"
+      }
+    },
+    "760477": {
+      "initialPrediction": {
+        "home": "Nova Zelandia",
+        "away": "Belgica",
+        "homeGoals": 0,
+        "awayGoals": 2,
+        "expectedGoals": { "home": 0.15, "away": 2.38 },
+        "homeChance": 7,
+        "drawChance": 10,
+        "awayChance": 83,
+        "favoriteChance": 83,
+        "winner": "away",
+        "capturedAt": "2026-06-20T02:59:20.212Z"
+      }
+    },
+    "760478": {
+      "initialPrediction": {
+        "home": "Cabo Verde",
+        "away": "Arabia Saudita",
+        "homeGoals": 1,
+        "awayGoals": 1,
+        "expectedGoals": { "home": 1, "away": 1.23 },
+        "homeChance": 32,
+        "drawChance": 27,
+        "awayChance": 41,
+        "favoriteChance": 41,
+        "winner": "draw",
+        "capturedAt": "2026-06-20T02:59:20.212Z"
+      }
+    },
+    "760479": {
+      "initialPrediction": {
+        "home": "Uruguai",
+        "away": "Espanha",
+        "homeGoals": 0,
+        "awayGoals": 2,
+        "expectedGoals": { "home": 0.15, "away": 2.28 },
+        "homeChance": 9,
+        "drawChance": 10,
+        "awayChance": 81,
+        "favoriteChance": 81,
+        "winner": "away",
+        "capturedAt": "2026-06-20T02:59:20.212Z"
+      }
+    },
+    "760480": {
+      "initialPrediction": {
+        "home": "Croacia",
+        "away": "Gana",
+        "homeGoals": 2,
+        "awayGoals": 0,
+        "expectedGoals": { "home": 2.24, "away": 0.17 },
+        "homeChance": 75,
+        "drawChance": 12,
+        "awayChance": 13,
+        "favoriteChance": 75,
+        "winner": "home",
+        "capturedAt": "2026-06-20T02:59:20.212Z"
+      }
+    },
+    "760481": {
+      "initialPrediction": {
+        "home": "Colombia",
+        "away": "Portugal",
+        "homeGoals": 1,
+        "awayGoals": 1,
+        "expectedGoals": { "home": 0.89, "away": 1.44 },
+        "homeChance": 29,
+        "drawChance": 24,
+        "awayChance": 47,
+        "favoriteChance": 47,
+        "winner": "draw",
+        "capturedAt": "2026-06-20T02:59:20.212Z"
+      }
+    },
+    "760482": {
+      "initialPrediction": {
+        "home": "RD Congo",
+        "away": "Uzbequistao",
+        "homeGoals": 1,
+        "awayGoals": 1,
+        "expectedGoals": { "home": 1.36, "away": 0.99 },
+        "homeChance": 42,
+        "drawChance": 26,
+        "awayChance": 32,
+        "favoriteChance": 42,
+        "winner": "draw",
+        "capturedAt": "2026-06-20T02:59:20.212Z"
+      }
+    },
+    "760483": {
+      "initialPrediction": {
+        "home": "Jordania",
+        "away": "Argentina",
+        "homeGoals": 0,
+        "awayGoals": 3,
+        "expectedGoals": { "home": 0.15, "away": 3.37 },
+        "homeChance": 6,
+        "drawChance": 10,
+        "awayChance": 84,
+        "favoriteChance": 84,
+        "winner": "away",
+        "capturedAt": "2026-06-20T02:59:20.212Z"
+      }
+    },
+    "760484": {
+      "initialPrediction": {
+        "home": "Argelia",
+        "away": "Austria",
+        "homeGoals": 1,
+        "awayGoals": 2,
+        "expectedGoals": { "home": 0.52, "away": 1.82 },
+        "homeChance": 19,
+        "drawChance": 17,
+        "awayChance": 64,
+        "favoriteChance": 64,
+        "winner": "away",
+        "capturedAt": "2026-06-20T02:59:20.212Z"
+      }
+    },
+    "760485": {
+      "initialPrediction": {
+        "home": "Panama",
+        "away": "Inglaterra",
+        "homeGoals": 0,
+        "awayGoals": 3,
+        "expectedGoals": { "home": 0.15, "away": 2.9 },
+        "homeChance": 6,
+        "drawChance": 10,
+        "awayChance": 84,
+        "favoriteChance": 84,
+        "winner": "away",
+        "capturedAt": "2026-06-20T02:59:20.212Z"
+      }
+    }
+  }
+}

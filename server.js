@@ -8,6 +8,7 @@ loadEnvFile();
 
 const HISTORY_FILE = path.join(DATA_DIR, "prediction-history.json");
 const HISTORY_SEED_FILE = path.join(DATA_DIR, "prediction-history.seed.json");
+const HISTORY_RECOVERY_FILE = path.join(DATA_DIR, "prediction-history.recovery.json");
 const SUMMARY_CACHE_FILE = path.join(DATA_DIR, "espn-summary-cache.json");
 const SIMULATION_HISTORY_FILE = path.join(DATA_DIR, "simulation-history.json");
 const API_BASE_URL = "https://v3.football.api-sports.io";
@@ -19,8 +20,9 @@ const PLAYER_SUMMARY_LIMIT = Number(process.env.PLAYER_SUMMARY_LIMIT || 128);
 const SIMULATION_RUNS = Number(process.env.SIMULATION_RUNS || 30000);
 const SIMULATION_CACHE_MS = Number(process.env.SIMULATION_CACHE_MS || CACHE_MS);
 const APP_TIME_ZONE = process.env.APP_TIME_ZONE || "Europe/Lisbon";
+const NEUTRAL_MATCH_BASE_GOALS = 1.13;
 const FIFA_RANKING_SOURCE = "Ranking FIFA masculino - base manual revisada em 2026-06-19";
-const MODEL_VERSION = "v2-calibrated-simulation";
+const MODEL_VERSION = "v3-poisson-dixon-coles";
 
 let cache = {
   expiresAt: 0,
@@ -31,6 +33,8 @@ let simulationCache = {
   expiresAt: 0,
   data: null,
 };
+let simulationBuildPromise = null;
+let simulationBuildKey = "";
 
 let predictionHistory = createEmptyPredictionHistory();
 let predictionHistoryStore = createPredictionHistoryStore();
@@ -503,13 +507,16 @@ function normalizeSimulationHistory(history) {
 }
 
 function loadPredictionHistorySeed() {
-  if (!fs.existsSync(HISTORY_SEED_FILE)) {
-    return createEmptyPredictionHistory();
-  }
+  const seed = readPredictionHistoryFile(HISTORY_SEED_FILE);
+  const recovery = readPredictionHistoryFile(HISTORY_RECOVERY_FILE);
+  return mergePredictionHistories(seed, recovery);
+}
+
+function readPredictionHistoryFile(filePath) {
+  if (!fs.existsSync(filePath)) return createEmptyPredictionHistory();
 
   try {
-    const parsed = readJsonFile(HISTORY_SEED_FILE);
-    return normalizePredictionHistory(parsed);
+    return normalizePredictionHistory(readJsonFile(filePath));
   } catch (error) {
     return createEmptyPredictionHistory();
   }
@@ -539,19 +546,30 @@ function mergePredictionRecord(seedRecord, storedRecord) {
   if (!seedRecord) return storedRecord;
   if (!storedRecord) return seedRecord;
 
-  const seedEvaluated = Boolean(seedRecord.initialPrediction && seedRecord.result && seedRecord.evaluation);
-  const storedEvaluated = Boolean(storedRecord.initialPrediction && storedRecord.result && storedRecord.evaluation);
+  const initialPrediction = storedRecord.initialPrediction || seedRecord.initialPrediction || null;
+  const latestPrediction =
+    storedRecord.latestPrediction || seedRecord.latestPrediction || initialPrediction || null;
 
-  if (storedEvaluated) return storedRecord;
-  if (seedEvaluated) {
-    return {
-      ...storedRecord,
-      ...seedRecord,
-      latestPrediction: storedRecord.latestPrediction || seedRecord.latestPrediction,
-    };
-  }
-
-  return storedRecord;
+  return {
+    ...seedRecord,
+    ...storedRecord,
+    initialPrediction,
+    latestPrediction,
+    evaluatedPrediction:
+      storedRecord.evaluatedPrediction || seedRecord.evaluatedPrediction || null,
+    result: storedRecord.result || seedRecord.result || null,
+    evaluation: storedRecord.evaluation || seedRecord.evaluation || null,
+    versionPredictions: {
+      ...(seedRecord.versionPredictions || {}),
+      ...(storedRecord.versionPredictions || {}),
+    },
+    versionEvaluations: {
+      ...(seedRecord.versionEvaluations || {}),
+      ...(storedRecord.versionEvaluations || {}),
+    },
+    createdAt: storedRecord.createdAt || seedRecord.createdAt,
+    updatedAt: storedRecord.updatedAt || seedRecord.updatedAt,
+  };
 }
 
 async function initializePersistence() {
@@ -693,37 +711,134 @@ function normalizeOutcomeChances(home, draw, away) {
   return Object.fromEntries(normalized.map((item) => [item.key, item.rounded]));
 }
 
-function predictionChances(diff, expectedHome, expectedAway, calibration) {
-  const expectedGap = expectedHome - expectedAway;
-  const draw = clamp(28 + calibration.drawBias - Math.abs(diff) * 0.42 - Math.abs(expectedGap) * 4.5, 10, 36);
-  const remaining = 100 - draw;
-  const homeShare = clamp(0.5 + (diff * 1.05 + expectedGap * 6) / Math.max(remaining, 1), 0.07, 0.93);
-  const home = remaining * homeShare;
-  const away = remaining - home;
+function poissonProbability(goals, expectedGoalsValue) {
+  let factorial = 1;
+  for (let value = 2; value <= goals; value += 1) {
+    factorial *= value;
+  }
 
-  return normalizeOutcomeChances(home, draw, away);
+  return (Math.exp(-expectedGoalsValue) * expectedGoalsValue ** goals) / factorial;
 }
 
-function scorelineFromExpected(expectedHome, expectedAway, chances) {
-  let homeGoals = clamp(Math.round(expectedHome), 0, 5);
-  let awayGoals = clamp(Math.round(expectedAway), 0, 5);
-  const favoriteGap = Math.abs(chances.homeChance - chances.awayChance);
-  const drawIsCentral = chances.drawChance >= Math.max(chances.homeChance, chances.awayChance) - 2;
+function dixonColesAdjustment(homeGoals, awayGoals, expectedHome, expectedAway, rho) {
+  if (homeGoals === 0 && awayGoals === 0) return 1 - expectedHome * expectedAway * rho;
+  if (homeGoals === 0 && awayGoals === 1) return 1 + expectedHome * rho;
+  if (homeGoals === 1 && awayGoals === 0) return 1 + expectedAway * rho;
+  if (homeGoals === 1 && awayGoals === 1) return 1 - rho;
+  return 1;
+}
 
-  if (drawIsCentral && Math.abs(expectedHome - expectedAway) < 0.25) {
-    const goals = clamp(Math.round((expectedHome + expectedAway) / 2), 0, 4);
-    return { homeGoals: goals, awayGoals: goals };
+const scoreProbabilityMatrixCache = new Map();
+
+function scoreProbabilityMatrix(expectedHome, expectedAway, calibration = defaultCalibration(0)) {
+  const rho = Number(calibration.dixonColesRho ?? -0.08);
+  const cacheKey = `${Number(expectedHome).toFixed(3)}:${Number(expectedAway).toFixed(3)}:${rho.toFixed(3)}`;
+  if (scoreProbabilityMatrixCache.has(cacheKey)) return scoreProbabilityMatrixCache.get(cacheKey);
+
+  const highestExpected = Math.max(expectedHome, expectedAway);
+  const maxGoals = clamp(Math.ceil(highestExpected + 4 * Math.sqrt(highestExpected)), 6, 10);
+  const scorelines = [];
+  let rawTotal = 0;
+
+  for (let homeGoals = 0; homeGoals <= maxGoals; homeGoals += 1) {
+    const homeProbability = poissonProbability(homeGoals, expectedHome);
+
+    for (let awayGoals = 0; awayGoals <= maxGoals; awayGoals += 1) {
+      const awayProbability = poissonProbability(awayGoals, expectedAway);
+      const adjustment = dixonColesAdjustment(homeGoals, awayGoals, expectedHome, expectedAway, rho);
+      const rawProbability = Math.max(0, homeProbability * awayProbability * adjustment);
+
+      scorelines.push({ homeGoals, awayGoals, rawProbability });
+      rawTotal += rawProbability;
+    }
   }
 
-  if (chances.homeChance > chances.awayChance && favoriteGap >= 12 && homeGoals <= awayGoals) {
-    homeGoals = clamp(awayGoals + 1, 1, 5);
+  const normalized = scorelines
+    .map((scoreline) => ({
+      homeGoals: scoreline.homeGoals,
+      awayGoals: scoreline.awayGoals,
+      probability: rawTotal ? scoreline.rawProbability / rawTotal : 0,
+    }))
+    .sort(
+      (first, second) =>
+        second.probability - first.probability ||
+        first.homeGoals + first.awayGoals - (second.homeGoals + second.awayGoals) ||
+        first.homeGoals - second.homeGoals
+    );
+  const outcomes = normalized.reduce(
+    (accumulator, scoreline) => {
+      if (scoreline.homeGoals > scoreline.awayGoals) accumulator.home += scoreline.probability;
+      else if (scoreline.homeGoals < scoreline.awayGoals) accumulator.away += scoreline.probability;
+      else accumulator.draw += scoreline.probability;
+      return accumulator;
+    },
+    { home: 0, draw: 0, away: 0 }
+  );
+  const chances = normalizeOutcomeChances(outcomes.home, outcomes.draw, outcomes.away);
+  const topScorelines = normalized.slice(0, 3).map((scoreline) => ({
+    homeGoals: scoreline.homeGoals,
+    awayGoals: scoreline.awayGoals,
+    probability: Number((scoreline.probability * 100).toFixed(1)),
+  }));
+
+  const matrix = {
+    homeGoals: topScorelines[0]?.homeGoals ?? 0,
+    awayGoals: topScorelines[0]?.awayGoals ?? 0,
+    scorelineChance: topScorelines[0]?.probability ?? 0,
+    topScorelines,
+    scorelines: normalized,
+    chances,
+    rho: Number(rho.toFixed(3)),
+  };
+
+  if (scoreProbabilityMatrixCache.size > 5000) scoreProbabilityMatrixCache.clear();
+  scoreProbabilityMatrixCache.set(cacheKey, matrix);
+  return matrix;
+}
+
+function scorelineDirection(scoreline) {
+  return resultDirection(scoreline.homeGoals, scoreline.awayGoals);
+}
+
+function scorelineFromMatrix(matrix, outcome = null, rng = null, maxCandidates = null) {
+  const allCandidates = outcome
+    ? matrix.scorelines.filter((scoreline) => scorelineDirection(scoreline) === outcome)
+    : matrix.scorelines;
+  const candidates = maxCandidates ? allCandidates.slice(0, maxCandidates) : allCandidates;
+  if (!candidates.length) return { home: 0, away: 0, probability: 0, source: "prediction" };
+
+  if (!rng) {
+    const scoreline = candidates[0];
+    return {
+      home: scoreline.homeGoals,
+      away: scoreline.awayGoals,
+      probability: Number((scoreline.probability * 100).toFixed(1)),
+      source: "prediction",
+    };
   }
 
-  if (chances.awayChance > chances.homeChance && favoriteGap >= 12 && awayGoals <= homeGoals) {
-    awayGoals = clamp(homeGoals + 1, 1, 5);
+  const total = candidates.reduce((sum, scoreline) => sum + scoreline.probability, 0) || 1;
+  let roll = rng() * total;
+
+  for (const scoreline of candidates) {
+    roll -= scoreline.probability;
+    if (roll <= 0) {
+      return {
+        home: scoreline.homeGoals,
+        away: scoreline.awayGoals,
+        probability: Number((scoreline.probability * 100).toFixed(1)),
+        source: "prediction",
+      };
+    }
   }
 
-  return { homeGoals, awayGoals };
+  const scoreline = candidates[candidates.length - 1];
+  return {
+    home: scoreline.homeGoals,
+    away: scoreline.awayGoals,
+    probability: Number((scoreline.probability * 100).toFixed(1)),
+    source: "prediction",
+  };
 }
 
 function predictMatch(match, teams) {
@@ -739,10 +854,17 @@ function predictMatch(match, teams) {
   const attackGapAway = awayProfile.attack - homeProfile.defense;
   const formGap = homeProfile.form - awayProfile.form;
   const playerGap = homeProfile.players - awayProfile.players;
-  const expectedHome = expectedGoals(1.18 + diff / 32 + attackGapHome / 42 + formGap / 85 + playerGap / 70, calibration);
-  const expectedAway = expectedGoals(1.08 - diff / 34 + attackGapAway / 42 - formGap / 90 - playerGap / 75, calibration);
-  const chances = predictionChances(diff, expectedHome, expectedAway, calibration);
-  const { homeGoals, awayGoals } = scorelineFromExpected(expectedHome, expectedAway, chances);
+  const expectedHome = expectedGoals(
+    NEUTRAL_MATCH_BASE_GOALS + diff / 33 + attackGapHome / 42 + formGap / 85 + playerGap / 70,
+    calibration
+  );
+  const expectedAway = expectedGoals(
+    NEUTRAL_MATCH_BASE_GOALS - diff / 33 + attackGapAway / 42 - formGap / 85 - playerGap / 70,
+    calibration
+  );
+  const scoreModel = scoreProbabilityMatrix(expectedHome, expectedAway, calibration);
+  const chances = scoreModel.chances;
+  const { homeGoals, awayGoals } = scoreModel;
   const favoriteChance = Math.max(chances.homeChance, chances.awayChance);
   const agreement = Math.sign(diff || 0) === Math.sign((expectedHome - expectedAway) || 0) ? 6 : -4;
   const confidence = clamp(
@@ -762,8 +884,14 @@ function predictMatch(match, teams) {
     drawChance: chances.drawChance,
     awayChance: chances.awayChance,
     favoriteChance,
+    scorelineChance: scoreModel.scorelineChance,
+    topScorelines: scoreModel.topScorelines,
     confidence,
     reason: buildReason(home, away, diff, homeWeight, awayWeight, expectedHome, expectedAway),
+    scoreModel: {
+      method: "Poisson com correção Dixon-Coles",
+      rho: scoreModel.rho,
+    },
     model: {
       home: homeProfile,
       away: awayProfile,
@@ -787,7 +915,7 @@ function predictionProfile(team) {
 }
 
 function expectedGoals(value, calibration) {
-  const evaluated = calibration.evaluated || 0;
+  const evaluated = calibration.effectiveEvaluated ?? calibration.evaluated ?? 0;
   const exactRate = calibration.exactRate || 0;
   const exactCorrection = evaluated ? clamp(1 + (0.28 - exactRate) * 0.08, 0.96, 1.05) : 1;
   const goalErrorCorrection = calibration.goalVolumeMultiplier || 1;
@@ -804,7 +932,7 @@ function buildReason(home, away, diff, homeWeight, awayWeight, expectedHome, exp
     return `Jogo equilibrado: ${home.name} tem peso ${homeWeight.toFixed(1)} e ${away.name} tem peso ${awayWeight.toFixed(1)}. Os gols esperados ficaram em ${expectedHome.toFixed(2)} x ${expectedAway.toFixed(2)}, então a premonição preserva chance relevante de empate.`;
   }
 
-  return `${stronger.name} aparece acima por ${gap} pontos de peso contra ${weaker.name}. O modelo combina ranking FIFA, forma na Copa, força dos adversários, ataque/defesa e média dos principais jogadores antes de arredondar os gols esperados (${expectedHome.toFixed(2)} x ${expectedAway.toFixed(2)}).`;
+  return `${stronger.name} aparece acima por ${gap} pontos de peso contra ${weaker.name}. O modelo combina ranking FIFA, forma na Copa, força dos adversários, ataque/defesa e média dos principais jogadores. Depois, transforma os gols esperados (${expectedHome.toFixed(2)} x ${expectedAway.toFixed(2)}) em uma matriz probabilística de placares.`;
 }
 
 function isFinished(status) {
@@ -2161,7 +2289,16 @@ function simulationCacheKey(payload) {
       .map((match) => {
         const actual = match.actualScore ? `${match.actualScore.home}-${match.actualScore.away}` : "";
         const prediction = match.prediction
-          ? `${match.prediction.homeGoals}-${match.prediction.awayGoals}-${match.prediction.homeChance}-${match.prediction.drawChance}-${match.prediction.awayChance}`
+          ? [
+              match.prediction.homeGoals,
+              match.prediction.awayGoals,
+              match.prediction.homeChance,
+              match.prediction.drawChance,
+              match.prediction.awayChance,
+              Number(match.prediction.expectedGoals?.home || 0).toFixed(3),
+              Number(match.prediction.expectedGoals?.away || 0).toFixed(3),
+              Number(match.prediction.scoreModel?.rho ?? -0.08).toFixed(3),
+            ].join("-")
           : "";
         return `${match.id}:${match.status}:${actual}:${prediction}`;
       })
@@ -2338,78 +2475,13 @@ function projectionExpectedGoals(payload, match) {
   };
 }
 
-const goalDistributionCache = new Map();
-
-function goalDistributionFor(lambda, max = 6) {
-  const safeLambda = clamp(lambda, 0.05, max);
-  const key = `${safeLambda.toFixed(2)}:${max}`;
-  if (goalDistributionCache.has(key)) return goalDistributionCache.get(key);
-
-  const distribution = [];
-  let probability = Math.exp(-safeLambda);
-  let cumulative = probability;
-  distribution.push(cumulative);
-
-  for (let goals = 1; goals < max; goals += 1) {
-    probability *= safeLambda / goals;
-    cumulative += probability;
-    distribution.push(cumulative);
-  }
-
-  distribution.push(1);
-  goalDistributionCache.set(key, distribution);
-  return distribution;
-}
-
-function samplePoissonGoals(lambda, rng, max = 6) {
-  const distribution = goalDistributionFor(lambda, max);
-  const roll = rng();
-
-  for (let goals = 0; goals < distribution.length; goals += 1) {
-    if (roll <= distribution[goals]) return goals;
-  }
-
-  return max;
-}
-
-function scoreDirection(home, away) {
-  if (home > away) return "home";
-  if (away > home) return "away";
-  return "draw";
-}
-
-function forceOutcomeScore(expected, outcome, rng) {
-  if (outcome === "draw") {
-    const goals = samplePoissonGoals((expected.home + expected.away) / 2, rng, 5);
-    return { home: goals, away: goals, source: "prediction" };
-  }
-
-  if (outcome === "home") {
-    const away = samplePoissonGoals(expected.away * 0.85, rng, 4);
-    const home = clamp(Math.max(away + 1, samplePoissonGoals(expected.home * 1.08, rng, 6)), 1, 6);
-    return { home, away, source: "prediction" };
-  }
-
-  const home = samplePoissonGoals(expected.home * 0.85, rng, 4);
-  const away = clamp(Math.max(home + 1, samplePoissonGoals(expected.away * 1.08, rng, 6)), 1, 6);
-  return { home, away, source: "prediction" };
-}
-
-function scoreForOutcome(payload, match, outcome, rng) {
+function scoreForOutcome(payload, match, outcome, rng, calibration = modelCalibration()) {
   const expected = projectionExpectedGoals(payload, match);
-
-  for (let attempt = 0; attempt < 10; attempt += 1) {
-    const home = samplePoissonGoals(expected.home, rng, 6);
-    const away = samplePoissonGoals(expected.away, rng, 6);
-    if (scoreDirection(home, away) === outcome) {
-      return { home, away, source: "prediction" };
-    }
-  }
-
-  return forceOutcomeScore(expected, outcome, rng);
+  const matrix = scoreProbabilityMatrix(expected.home, expected.away, calibration);
+  return scorelineFromMatrix(matrix, outcome, rng);
 }
 
-function randomProjectionScore(payload, match, rng) {
+function randomProjectionScore(payload, match, rng, calibration = modelCalibration()) {
   if ((isFinished(match.status) || isLiveStatus(match.status)) && match.actualScore) {
     return {
       home: Number(match.actualScore.home || 0),
@@ -2420,9 +2492,9 @@ function randomProjectionScore(payload, match, rng) {
 
   const probabilities = normalizedOutcomeProbabilities(payload, match);
   const roll = rng();
-  if (roll < probabilities.home) return scoreForOutcome(payload, match, "home", rng);
-  if (roll < probabilities.home + probabilities.draw) return scoreForOutcome(payload, match, "draw", rng);
-  return scoreForOutcome(payload, match, "away", rng);
+  if (roll < probabilities.home) return scoreForOutcome(payload, match, "home", rng, calibration);
+  if (roll < probabilities.home + probabilities.draw) return scoreForOutcome(payload, match, "draw", rng, calibration);
+  return scoreForOutcome(payload, match, "away", rng, calibration);
 }
 
 function buildProjectionTables(payload, matches, scoreBuilder) {
@@ -2544,6 +2616,7 @@ function simulateFullBracket(payload, rounds, groups, thirdRows, options = {}) {
   const context = {
     ...createBracketContext(groups, thirdRows),
     rng: options.rng || null,
+    calibration: options.calibration || modelCalibration(),
     payload,
   };
 
@@ -2590,7 +2663,7 @@ function simulateBracketMatch(match, context) {
   context.participants[`${match.id}:home`] = home;
   context.participants[`${match.id}:away`] = away;
 
-  const result = knockoutResultFor(context.payload, match, home, away, context.rng);
+  const result = knockoutResultFor(context.payload, match, home, away, context.rng, context.calibration);
   context.results[match.id] = result;
   return result;
 }
@@ -2690,19 +2763,72 @@ function knockoutExpectedGoals(home, away) {
   const diff = homeWeight - awayWeight;
 
   return {
-    home: clamp(1.15 + diff / 38 + Number(home?.goalsFor || 0) * 0.025, 0.25, 3.8),
-    away: clamp(1.05 - diff / 40 + Number(away?.goalsFor || 0) * 0.025, 0.25, 3.8),
+    home: clamp(1.1 + diff / 39 + Number(home?.goalsFor || 0) * 0.025, 0.25, 3.8),
+    away: clamp(1.1 - diff / 39 + Number(away?.goalsFor || 0) * 0.025, 0.25, 3.8),
   };
 }
 
-function projectedKnockoutScore(home, away, homeWins, rng = null) {
+function knockoutScoreModel(home, away, calibration = modelCalibration()) {
   const expected = knockoutExpectedGoals(home, away);
-  const generator = rng || simulationRandom(simulationHash(`${safeSimulationTeamKey(home)}-${safeSimulationTeamKey(away)}`));
-  const score = forceOutcomeScore(expected, homeWins ? "home" : "away", generator);
-  return { home: score.home, away: score.away };
+  const matrix = scoreProbabilityMatrix(expected.home, expected.away, calibration);
+  const strengthTiebreakChance = knockoutWinChance(home, away);
+  const regulationHomeChance = matrix.chances.homeChance / 100;
+  const drawChance = matrix.chances.drawChance / 100;
+
+  return {
+    expected,
+    matrix,
+    homeAdvanceChance: clamp(regulationHomeChance + drawChance * strengthTiebreakChance, 0.05, 0.95),
+  };
 }
 
-function knockoutResultFor(payload, match, home, away, rng = null) {
+function projectedKnockoutScore(home, away, rng = null, calibration = modelCalibration(), scoreModel = null) {
+  const model = scoreModel || knockoutScoreModel(home, away, calibration);
+  const score = scorelineFromMatrix(model.matrix, null, rng);
+  return { home: score.home, away: score.away, probability: score.probability };
+}
+
+function projectedBracketScore(scoreModel, homeWins, tiebreakHomeChance, rng) {
+  const candidates = scoreModel.matrix.scorelines
+    .map((scoreline) => {
+      const direction = resultDirection(scoreline.homeGoals, scoreline.awayGoals);
+      const compatible =
+        direction === "draw" || (homeWins && direction === "home") || (!homeWins && direction === "away");
+      if (!compatible) return null;
+
+      const advancementWeight =
+        direction === "draw" ? (homeWins ? tiebreakHomeChance : 1 - tiebreakHomeChance) : 1;
+      return {
+        ...scoreline,
+        projectedProbability: scoreline.probability * advancementWeight,
+      };
+    })
+    .filter(Boolean)
+    .sort((first, second) => second.projectedProbability - first.projectedProbability)
+    .slice(0, 12);
+  const total = candidates.reduce((sum, scoreline) => sum + scoreline.projectedProbability, 0) || 1;
+  let roll = rng() * total;
+
+  for (const scoreline of candidates) {
+    roll -= scoreline.projectedProbability;
+    if (roll <= 0) {
+      return {
+        home: scoreline.homeGoals,
+        away: scoreline.awayGoals,
+        probability: Number((scoreline.probability * 100).toFixed(1)),
+      };
+    }
+  }
+
+  const fallback = candidates[0] || { homeGoals: homeWins ? 1 : 0, awayGoals: homeWins ? 0 : 1, probability: 0 };
+  return {
+    home: fallback.homeGoals,
+    away: fallback.awayGoals,
+    probability: Number((fallback.probability * 100).toFixed(1)),
+  };
+}
+
+function knockoutResultFor(payload, match, home, away, rng = null, calibration = modelCalibration()) {
   if ((isFinished(match.status) || isLiveStatus(match.status)) && match.actualScore) {
     const homeScore = Number(match.actualScore.home || 0);
     const awayScore = Number(match.actualScore.away || 0);
@@ -2717,13 +2843,34 @@ function knockoutResultFor(payload, match, home, away, rng = null) {
     };
   }
 
-  const homeWins = rng ? rng() < knockoutWinChance(home, away) : knockoutWinChance(home, away) >= 0.5;
+  const scoreModel = knockoutScoreModel(home, away, calibration);
+  const deterministic = !rng;
+  const generator =
+    rng ||
+    simulationRandom(
+      simulationHash(`${MODEL_VERSION}:${match.id}:${safeSimulationTeamKey(home)}:${safeSimulationTeamKey(away)}`)
+    );
+  const strengthTiebreakChance = knockoutWinChance(home, away);
+  const projectedHomeWins = scoreModel.homeAdvanceChance >= 0.5;
+  const score = deterministic
+    ? projectedBracketScore(scoreModel, projectedHomeWins, strengthTiebreakChance, generator)
+    : projectedKnockoutScore(home, away, generator, calibration, scoreModel);
+  const direction = resultDirection(score.home, score.away);
+  const homeWins = deterministic
+    ? projectedHomeWins
+    : direction === "home"
+      ? true
+      : direction === "away"
+        ? false
+        : generator() < strengthTiebreakChance;
   return {
     home,
     away,
     winner: homeWins ? home : away,
     loser: homeWins ? away : home,
-    score: projectedKnockoutScore(home, away, homeWins, rng),
+    score,
+    decidedBy: direction === "draw" ? "penalties" : "regulation",
+    homeAdvanceChance: Number((scoreModel.homeAdvanceChance * 100).toFixed(1)),
     source: "simulation",
   };
 }
@@ -2775,10 +2922,28 @@ async function buildSimulationPayload(options = {}) {
   const key = simulationCacheKey(payload);
   const now = Date.now();
 
-  if (!force && simulationCache.data && simulationCache.key === key && simulationCache.expiresAt > now) {
+  if (!force && simulationCache.data && simulationCache.key === key) {
     return simulationCache.data;
   }
 
+  if (simulationBuildPromise && simulationBuildKey === key) {
+    return simulationBuildPromise;
+  }
+
+  simulationBuildKey = key;
+  simulationBuildPromise = calculateSimulationPayload(payload, key, now);
+
+  try {
+    return await simulationBuildPromise;
+  } finally {
+    if (simulationBuildKey === key) {
+      simulationBuildPromise = null;
+      simulationBuildKey = "";
+    }
+  }
+}
+
+async function calculateSimulationPayload(payload, key, now) {
   const groupMatches = (payload.matches || []).filter(isGroupStageMatch).sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
   const deterministic = buildProjectionTables(payload, groupMatches, (match) => deterministicProjectionScore(payload, match));
   const teamKeys = deterministic.groups.flatMap((group) => group.teams.map((team) => team.teamKey));
@@ -2799,12 +2964,17 @@ async function buildSimulationPayload(options = {}) {
     ])
   );
   const rng = simulationRandom(simulationHash(key || "premonicao"));
+  const calibration = modelCalibration();
   const knockoutRounds = groupKnockoutRounds((payload.matches || []).filter(isKnockoutMatch));
 
   for (let run = 0; run < SIMULATION_RUNS; run += 1) {
-    const scenario = buildProjectionTables(payload, groupMatches, (match) => randomProjectionScore(payload, match, rng));
+    const scenario = buildProjectionTables(payload, groupMatches, (match) => randomProjectionScore(payload, match, rng, calibration));
     const thirdRows = evaluateSimulationScenario(scenario.groups, counts);
-    simulateFullBracket(payload, knockoutRounds, scenario.groups, thirdRows, { rng, counts });
+    simulateFullBracket(payload, knockoutRounds, scenario.groups, thirdRows, { rng, counts, calibration });
+
+    if (run > 0 && run % 250 === 0) {
+      await new Promise((resolve) => setImmediate(resolve));
+    }
   }
 
   const probabilities = Object.fromEntries(
@@ -2906,6 +3076,7 @@ function healthPayload() {
     worldCupCacheExpiresAt: cache.expiresAt ? new Date(cache.expiresAt).toISOString() : null,
     simulationGeneratedAt: simulationCache.data?.generatedAt || null,
     simulationCacheExpiresAt: simulationCache.expiresAt ? new Date(simulationCache.expiresAt).toISOString() : null,
+    simulationRefreshing: Boolean(simulationBuildPromise),
     historyStorage: predictionHistoryStore.name,
     simulationHistoryStorage: simulationHistoryStore.name,
     evaluatedPredictions: historySummary.evaluated,
@@ -2930,6 +3101,9 @@ async function updatePredictionHistory(matches, teams) {
         predictionHistory.matches[key] = createPredictionRecord(match, teams);
         changed = true;
       } else if (!existing.result) {
+        if (ensureVersionPrediction(existing, match, teams)) {
+          changed = true;
+        }
         existing.latestPrediction = snapshotPrediction(match, teams);
         existing.updatedAt = new Date().toISOString();
         changed = true;
@@ -2959,6 +3133,7 @@ async function updatePredictionHistory(matches, teams) {
         existing.result = snapshotResult(match, teams);
         const evaluated = ensureEvaluatedPrediction(existing, recoveredPrediction);
         existing.evaluation = evaluatePrediction(evaluated.prediction, match.actualScore);
+        updateVersionEvaluations(existing);
         existing.completedAt = new Date().toISOString();
         changed = true;
       } else {
@@ -2971,6 +3146,9 @@ async function updatePredictionHistory(matches, teams) {
           existing.completedAt = existing.completedAt || new Date().toISOString();
           changed = true;
         }
+        if (updateVersionEvaluations(existing)) {
+          changed = true;
+        }
       }
     }
   });
@@ -2981,19 +3159,55 @@ async function updatePredictionHistory(matches, teams) {
 }
 
 function createPredictionRecord(match, teams) {
+  const prediction = snapshotPrediction(match, teams);
+
   return {
     id: match.id,
     group: match.group,
     date: match.timestamp,
     home: teams[match.home]?.name,
     away: teams[match.away]?.name,
-    initialPrediction: snapshotPrediction(match, teams),
-    latestPrediction: snapshotPrediction(match, teams),
+    initialPrediction: prediction,
+    latestPrediction: prediction,
+    versionPredictions: prediction ? { [MODEL_VERSION]: prediction } : {},
+    versionEvaluations: {},
     result: null,
     evaluation: null,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   };
+}
+
+function ensureVersionPrediction(record, match, teams) {
+  if (!match.prediction) return false;
+  record.versionPredictions =
+    record.versionPredictions && typeof record.versionPredictions === "object"
+      ? record.versionPredictions
+      : {};
+  if (record.versionPredictions[MODEL_VERSION]) return false;
+
+  record.versionPredictions[MODEL_VERSION] = snapshotPrediction(match, teams);
+  return true;
+}
+
+function updateVersionEvaluations(record) {
+  if (!record?.result || !record.versionPredictions) return false;
+  record.versionEvaluations =
+    record.versionEvaluations && typeof record.versionEvaluations === "object"
+      ? record.versionEvaluations
+      : {};
+  let changed = false;
+
+  Object.entries(record.versionPredictions).forEach(([version, prediction]) => {
+    if (!prediction || record.versionEvaluations[version]) return;
+    record.versionEvaluations[version] = evaluatePrediction(prediction, {
+      home: record.result.homeGoals,
+      away: record.result.awayGoals,
+    });
+    changed = true;
+  });
+
+  return changed;
 }
 
 function createResultOnlyRecord(match, teams, recoveredPrediction = null) {
@@ -3100,6 +3314,9 @@ function snapshotPrediction(match, teams, prediction = match.prediction) {
     drawChance: prediction.drawChance,
     awayChance: prediction.awayChance,
     favoriteChance: prediction.favoriteChance,
+    scorelineChance: prediction.scorelineChance,
+    topScorelines: prediction.topScorelines,
+    scoreModel: prediction.scoreModel,
     winner: resultDirection(prediction.homeGoals, prediction.awayGoals),
     modelVersion: MODEL_VERSION,
     capturedAt: new Date().toISOString(),
@@ -3132,6 +3349,47 @@ function evaluatePrediction(prediction, actualScore) {
   const totalGoalError = homeGoalError + awayGoalError;
   const expectedHome = Number(prediction.expectedGoals?.home);
   const expectedAway = Number(prediction.expectedGoals?.away);
+  const actualOutcome = {
+    home: actualWinner === "home" ? 1 : 0,
+    draw: actualWinner === "draw" ? 1 : 0,
+    away: actualWinner === "away" ? 1 : 0,
+  };
+  const rawOutcomeProbabilities = {
+    home: Number(prediction.homeChance) / 100,
+    draw: Number(prediction.drawChance) / 100,
+    away: Number(prediction.awayChance) / 100,
+  };
+  const probabilityTotal =
+    rawOutcomeProbabilities.home + rawOutcomeProbabilities.draw + rawOutcomeProbabilities.away;
+  const hasOutcomeProbabilities =
+    Object.values(rawOutcomeProbabilities).every(Number.isFinite) && probabilityTotal > 0;
+  const outcomeProbabilities = hasOutcomeProbabilities
+    ? {
+        home: rawOutcomeProbabilities.home / probabilityTotal,
+        draw: rawOutcomeProbabilities.draw / probabilityTotal,
+        away: rawOutcomeProbabilities.away / probabilityTotal,
+      }
+    : null;
+  const brierScore = outcomeProbabilities
+    ? ["home", "draw", "away"].reduce(
+        (sum, key) => sum + (outcomeProbabilities[key] - actualOutcome[key]) ** 2,
+        0
+      )
+    : null;
+  const outcomeLogLoss = outcomeProbabilities
+    ? -Math.log(clamp(outcomeProbabilities[actualWinner], 0.001, 1))
+    : null;
+  const scoreMatrix =
+    Number.isFinite(expectedHome) && Number.isFinite(expectedAway)
+      ? scoreProbabilityMatrix(expectedHome, expectedAway, {
+          dixonColesRho: Number(prediction.scoreModel?.rho ?? -0.08),
+        })
+      : null;
+  const actualScoreline = scoreMatrix?.scorelines.find(
+    (scoreline) =>
+      scoreline.homeGoals === Number(actualScore.home) && scoreline.awayGoals === Number(actualScore.away)
+  );
+  const actualScoreProbability = actualScoreline?.probability || null;
 
   return {
     exactScore: prediction.homeGoals === actualScore.home && prediction.awayGoals === actualScore.away,
@@ -3150,12 +3408,44 @@ function evaluatePrediction(prediction, actualScore) {
       Number.isFinite(expectedHome) && Number.isFinite(expectedAway)
         ? Number((Math.abs(expectedHome - actualScore.home) + Math.abs(expectedAway - actualScore.away)).toFixed(2))
         : null,
+    brierScore: Number.isFinite(brierScore) ? Number(brierScore.toFixed(4)) : null,
+    outcomeLogLoss: Number.isFinite(outcomeLogLoss) ? Number(outcomeLogLoss.toFixed(4)) : null,
+    actualScoreProbability: actualScoreProbability
+      ? Number((actualScoreProbability * 100).toFixed(2))
+      : null,
+    scorelineLogLoss: actualScoreProbability
+      ? Number((-Math.log(clamp(actualScoreProbability, 0.000001, 1))).toFixed(4))
+      : null,
     favoriteChance: prediction.favoriteChance || Math.max(prediction.homeChance || 0, prediction.awayChance || 0),
   };
 }
 
 function predictionForEvaluation(record) {
   return record?.initialPrediction || record?.evaluatedPrediction || record?.latestPrediction || null;
+}
+
+function predictionForCalibration(record) {
+  return record?.calibrationPrediction || predictionForEvaluation(record);
+}
+
+function evaluationRecordForVersion(record, version) {
+  const officialPrediction = predictionForEvaluation(record);
+  const prediction =
+    record?.versionPredictions?.[version] ||
+    (officialPrediction?.modelVersion === version ? officialPrediction : null);
+  if (!prediction || !record?.result) return null;
+
+  return {
+    ...record,
+    calibrationPrediction: prediction,
+    evaluatedPrediction: prediction,
+    evaluation:
+      record.versionEvaluations?.[version] ||
+      evaluatePrediction(prediction, {
+        home: record.result.homeGoals,
+        away: record.result.awayGoals,
+      }),
+  };
 }
 
 function normalizedEvaluationRecord(record) {
@@ -3214,9 +3504,7 @@ function localizeResultSnapshot(snapshot) {
   };
 }
 
-function modelCalibration() {
-  const records = Object.values(predictionHistory.matches || {}).map(normalizedEvaluationRecord);
-  const evaluated = records.filter((record) => record.evaluation && predictionForEvaluation(record) && record.result);
+function calibrationFromRecords(evaluated, confidenceCap = 1) {
   const total = evaluated.length;
 
   if (!total) {
@@ -3234,16 +3522,25 @@ function modelCalibration() {
   const weightedCount = (predicate) =>
     weightedRecords.reduce((sum, item) => sum + (predicate(item.record) ? item.weight : 0), 0);
   const actualDraws = weightedCount((record) => record.result.winner === "draw");
-  const predictedDraws = weightedCount((record) => predictionForEvaluation(record).winner === "draw");
+  const predictedDraws = weightedCount((record) => predictionForCalibration(record).winner === "draw");
+  const actualLowScoreDraws = weightedCount(
+    (record) =>
+      Number(record.result.homeGoals) === Number(record.result.awayGoals) && Number(record.result.homeGoals) <= 1
+  );
+  const predictedLowScoreDraws = weightedCount((record) => {
+    const prediction = predictionForCalibration(record);
+    return Number(prediction.homeGoals) === Number(prediction.awayGoals) && Number(prediction.homeGoals) <= 1;
+  });
   const directionHits = weightedCount((record) => record.evaluation.direction);
   const exactHits = weightedCount((record) => record.evaluation.exactScore);
-  const confidenceFactor = clamp(total / 12, 0.15, 1);
+  const confidenceFactor = clamp(total / 12, 0.15, confidenceCap);
   const directionRate = directionHits / weightedTotal;
   const exactRate = exactHits / weightedTotal;
   const drawGap = (actualDraws - predictedDraws) / weightedTotal;
+  const lowScoreDrawGap = (actualLowScoreDraws - predictedLowScoreDraws) / weightedTotal;
   const goalStats = weightedRecords.reduce(
     (acc, record) => {
-      const prediction = predictionForEvaluation(record.record);
+      const prediction = predictionForCalibration(record.record);
       const predictedTotal = Number(prediction.homeGoals || 0) + Number(prediction.awayGoals || 0);
       const actualTotal = Number(record.record.result.homeGoals || 0) + Number(record.record.result.awayGoals || 0);
 
@@ -3272,6 +3569,7 @@ function modelCalibration() {
     goalBias: Number(goalBias.toFixed(2)),
     goalVolumeMultiplier: Number(goalVolumeMultiplier.toFixed(3)),
     drawBias: Number(clamp(drawGap * 10 * confidenceFactor, -4, 6).toFixed(2)),
+    dixonColesRho: Number(clamp(-0.08 - lowScoreDrawGap * 0.3 * confidenceFactor, -0.16, -0.02).toFixed(3)),
     diffMultiplier: Number(clamp(1 - (0.55 - directionRate) * 0.35 * confidenceFactor, 0.82, 1.12).toFixed(2)),
     formMultiplier: Number(clamp(2.8 - (0.5 - directionRate) * 0.45 * confidenceFactor, 2.35, 3.15).toFixed(2)),
     profileMultiplier: Number(clamp(1 - (0.45 - exactRate) * 0.18 * confidenceFactor, 0.85, 1.08).toFixed(2)),
@@ -3279,9 +3577,80 @@ function modelCalibration() {
   };
 }
 
+function blendCalibration(prior, current, currentWeight) {
+  const numericFields = [
+    "confidenceFactor",
+    "directionRate",
+    "exactRate",
+    "averageGoalError",
+    "goalBias",
+    "goalVolumeMultiplier",
+    "drawBias",
+    "dixonColesRho",
+    "diffMultiplier",
+    "formMultiplier",
+    "profileMultiplier",
+    "playerImpactMultiplier",
+  ];
+  const blended = {};
+
+  numericFields.forEach((field) => {
+    const priorValue = Number(prior[field]);
+    const currentValue = Number(current[field]);
+    blended[field] = Number(
+      ((Number.isFinite(priorValue) ? priorValue : 0) * (1 - currentWeight) +
+        (Number.isFinite(currentValue) ? currentValue : 0) * currentWeight
+      ).toFixed(field === "dixonColesRho" || field === "goalVolumeMultiplier" ? 3 : 2)
+    );
+  });
+
+  return blended;
+}
+
+function modelCalibration() {
+  const sourceRecords = Object.values(predictionHistory.matches || {});
+  const evaluated = sourceRecords
+    .map(normalizedEvaluationRecord)
+    .filter((record) => record.evaluation && predictionForEvaluation(record) && record.result);
+  const currentRecords = sourceRecords
+    .map((record) => evaluationRecordForVersion(record, MODEL_VERSION))
+    .filter(Boolean);
+  const priorRecords = evaluated.filter(
+    (record) => predictionForEvaluation(record)?.modelVersion !== MODEL_VERSION
+  );
+  const priorCalibration = calibrationFromRecords(priorRecords, 0.35);
+  const currentCalibration = calibrationFromRecords(currentRecords, 1);
+  const currentWeight = clamp(currentRecords.length / 12, 0, 1);
+  const effectiveCalibration =
+    currentRecords.length > 0
+      ? blendCalibration(priorCalibration, currentCalibration, currentWeight)
+      : priorCalibration;
+
+  return {
+    ...effectiveCalibration,
+    evaluated: currentRecords.length,
+    effectiveEvaluated: Number(
+      (currentRecords.length + Math.min(priorRecords.length, 4) * (1 - currentWeight)).toFixed(2)
+    ),
+    currentVersion: MODEL_VERSION,
+    currentVersionEvaluated: currentRecords.length,
+    priorEvaluated: priorRecords.length,
+    versionWeight: Number(currentWeight.toFixed(2)),
+    calibrationSource:
+      currentRecords.length >= 12
+        ? "modelo atual"
+        : currentRecords.length > 0
+          ? "modelo atual + referência histórica reduzida"
+          : priorRecords.length > 0
+            ? "referência histórica reduzida"
+            : "padrão inicial",
+  };
+}
+
 function defaultCalibration(evaluated) {
   return {
     evaluated,
+    effectiveEvaluated: evaluated,
     confidenceFactor: 0,
     directionRate: 0,
     exactRate: 0,
@@ -3289,10 +3658,16 @@ function defaultCalibration(evaluated) {
     goalBias: 0,
     goalVolumeMultiplier: 1,
     drawBias: 0,
+    dixonColesRho: -0.08,
     diffMultiplier: 1,
     formMultiplier: 2.8,
     profileMultiplier: 1,
     playerImpactMultiplier: 1,
+    currentVersion: MODEL_VERSION,
+    currentVersionEvaluated: 0,
+    priorEvaluated: 0,
+    versionWeight: 0,
+    calibrationSource: "padrão inicial",
   };
 }
 
@@ -3311,13 +3686,57 @@ function getPredictionHistorySummary() {
       acc.totalGoalError += Number(record.evaluation.totalGoalError || 0);
       acc.totalGoalsError += Number(record.evaluation.totalGoalsError || 0);
       acc.expectedGoalError += Number(record.evaluation.expectedGoalError || 0);
+      if (record.evaluation.brierScore != null && Number.isFinite(Number(record.evaluation.brierScore))) {
+        acc.brierScore += Number(record.evaluation.brierScore);
+        acc.brierSamples += 1;
+      }
+      if (record.evaluation.outcomeLogLoss != null && Number.isFinite(Number(record.evaluation.outcomeLogLoss))) {
+        acc.outcomeLogLoss += Number(record.evaluation.outcomeLogLoss);
+        acc.outcomeLogLossSamples += 1;
+      }
+      if (record.evaluation.scorelineLogLoss != null && Number.isFinite(Number(record.evaluation.scorelineLogLoss))) {
+        acc.scorelineLogLoss += Number(record.evaluation.scorelineLogLoss);
+        acc.scorelineLogLossSamples += 1;
+      }
+      if (record.evaluation.actualScoreProbability != null && Number.isFinite(Number(record.evaluation.actualScoreProbability))) {
+        acc.actualScoreProbability += Number(record.evaluation.actualScoreProbability);
+        acc.actualScoreProbabilitySamples += 1;
+      }
       return acc;
     },
-    { exactScore: 0, winner: 0, draw: 0, direction: 0, totalGoalError: 0, totalGoalsError: 0, expectedGoalError: 0 }
+    {
+      exactScore: 0,
+      winner: 0,
+      draw: 0,
+      direction: 0,
+      totalGoalError: 0,
+      totalGoalsError: 0,
+      expectedGoalError: 0,
+      brierScore: 0,
+      brierSamples: 0,
+      outcomeLogLoss: 0,
+      outcomeLogLossSamples: 0,
+      scorelineLogLoss: 0,
+      scorelineLogLossSamples: 0,
+      actualScoreProbability: 0,
+      actualScoreProbabilitySamples: 0,
+    }
   );
   summary.averageGoalError = evaluated.length ? Number((summary.totalGoalError / evaluated.length).toFixed(2)) : 0;
   summary.averageTotalGoalsError = evaluated.length ? Number((summary.totalGoalsError / evaluated.length).toFixed(2)) : 0;
   summary.averageExpectedGoalError = evaluated.length ? Number((summary.expectedGoalError / evaluated.length).toFixed(2)) : 0;
+  summary.averageBrierScore = summary.brierSamples
+    ? Number((summary.brierScore / summary.brierSamples).toFixed(3))
+    : null;
+  summary.averageOutcomeLogLoss = summary.outcomeLogLossSamples
+    ? Number((summary.outcomeLogLoss / summary.outcomeLogLossSamples).toFixed(3))
+    : null;
+  summary.averageScorelineLogLoss = summary.scorelineLogLossSamples
+    ? Number((summary.scorelineLogLoss / summary.scorelineLogLossSamples).toFixed(3))
+    : null;
+  summary.averageActualScoreProbability = summary.actualScoreProbabilitySamples
+    ? Number((summary.actualScoreProbability / summary.actualScoreProbabilitySamples).toFixed(2))
+    : null;
 
   return {
     total: records.length,
@@ -3369,14 +3788,53 @@ function buildModelVersionStats(records) {
   const groups = new Map();
 
   records.forEach((record) => {
-    const prediction = predictionForEvaluation(record);
-    const version = prediction?.modelVersion || "v1-historico";
-    const item = groups.get(version) || { version, total: 0, hits: 0, exact: 0, goalError: 0 };
-    item.total += 1;
-    item.hits += record.evaluation?.direction ? 1 : 0;
-    item.exact += record.evaluation?.exactScore ? 1 : 0;
-    item.goalError += Number(record.evaluation?.totalGoalError || 0);
-    groups.set(version, item);
+    const officialPrediction = predictionForEvaluation(record);
+    const predictionsByVersion = new Map();
+    if (officialPrediction) {
+      predictionsByVersion.set(officialPrediction.modelVersion || "v1-historico", officialPrediction);
+    }
+    Object.entries(record.versionPredictions || {}).forEach(([version, prediction]) => {
+      predictionsByVersion.set(version, prediction);
+    });
+
+    predictionsByVersion.forEach((prediction, version) => {
+      if (!prediction) return;
+      const evaluation =
+        (officialPrediction === prediction ? record.evaluation : null) ||
+        record.versionEvaluations?.[version] ||
+        (record.result
+          ? evaluatePrediction(prediction, {
+              home: record.result.homeGoals,
+              away: record.result.awayGoals,
+            })
+          : null);
+      if (!evaluation) return;
+
+      const item = groups.get(version) || {
+        version,
+        total: 0,
+        hits: 0,
+        exact: 0,
+        goalError: 0,
+        brierScore: 0,
+        brierSamples: 0,
+        scorelineLogLoss: 0,
+        scorelineLogLossSamples: 0,
+      };
+      item.total += 1;
+      item.hits += evaluation.direction ? 1 : 0;
+      item.exact += evaluation.exactScore ? 1 : 0;
+      item.goalError += Number(evaluation.totalGoalError || 0);
+      if (evaluation.brierScore != null && Number.isFinite(Number(evaluation.brierScore))) {
+        item.brierScore += Number(evaluation.brierScore);
+        item.brierSamples += 1;
+      }
+      if (evaluation.scorelineLogLoss != null && Number.isFinite(Number(evaluation.scorelineLogLoss))) {
+        item.scorelineLogLoss += Number(evaluation.scorelineLogLoss);
+        item.scorelineLogLossSamples += 1;
+      }
+      groups.set(version, item);
+    });
   });
 
   return Array.from(groups.values()).map((item) => ({
@@ -3385,6 +3843,12 @@ function buildModelVersionStats(records) {
     rate: item.total ? Math.round((item.hits / item.total) * 100) : 0,
     exactRate: item.total ? Math.round((item.exact / item.total) * 100) : 0,
     averageGoalError: item.total ? Number((item.goalError / item.total).toFixed(2)) : 0,
+    averageBrierScore: item.brierSamples
+      ? Number((item.brierScore / item.brierSamples).toFixed(3))
+      : null,
+    averageScorelineLogLoss: item.scorelineLogLossSamples
+      ? Number((item.scorelineLogLoss / item.scorelineLogLossSamples).toFixed(3))
+      : null,
   }));
 }
 
@@ -3541,6 +4005,9 @@ async function refreshWorldCupDataInBackground() {
   backgroundRefreshRunning = true;
   try {
     await buildWorldCupPayload({ force: true });
+    buildSimulationPayload().catch((error) => {
+      console.warn(`Falha ao atualizar simulação em segundo plano: ${error.message}`);
+    });
   } catch (error) {
     console.warn(`Falha ao atualizar dados em segundo plano: ${error.message}`);
   } finally {
@@ -3587,6 +4054,12 @@ module.exports = {
     normalizePlayerScoreList,
     playerScoreFromStats,
     playerPositionGroup,
+    scoreProbabilityMatrix,
+    scorelineFromMatrix,
+    simulationCacheKey,
+    knockoutScoreModel,
+    projectedKnockoutScore,
+    knockoutResultFor,
     buildAccuracyByGameType,
     buildModelVersionStats,
   },

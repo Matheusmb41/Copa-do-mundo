@@ -2,6 +2,19 @@
 
 App web que lista jogos da Copa, mostra resultados reais de jogos finalizados e simula placares futuros com base no peso atualizado das selecoes.
 
+## Modelo de premonicao
+
+O placar usa gols esperados combinados com uma matriz de Poisson e correcao Dixon-Coles. O sistema:
+
+- mostra os tres placares mais provaveis;
+- preserva a premonicao inicial para avaliacao;
+- separa resultados e calibracao por versao do modelo;
+- usa modelos anteriores apenas como referencia reduzida enquanto a versao atual tem pouca amostra;
+- mede placar exato, resultado geral, erro de gols, Brier e log-loss;
+- executa 30 mil cenarios para classificacao, chave e campeao.
+
+Na chave principal, avanca a selecao com maior probabilidade de classificacao. Zebras continuam existindo dentro dos 30 mil cenarios, sem tornar a projecao central contraditoria.
+
 ## Rodar localmente
 
 ```bash
@@ -59,6 +72,8 @@ Variaveis uteis no Render:
 ```txt
 WORLD_CUP_SEASON=2026
 API_CACHE_MS=120000
+SIMULATION_CACHE_MS=120000
+SIMULATION_RUNS=30000
 DATABASE_URL=<url do Postgres>
 ```
 

@@ -499,6 +499,7 @@ const renderPredictionStats = () => {
       ${accuracyCard("Empate", summary.draw, evaluated)}
     </section>
     ${renderProbabilityBuckets(predictionHistory.probabilityBuckets)}
+    ${renderProbabilityQuality(summary)}
     ${renderAccuracyByGameType(predictionHistory.accuracyByGameType)}
     ${renderModelVersionStats(predictionHistory.modelVersions)}
     <section class="details-card">
@@ -567,14 +568,58 @@ const summarizeEvaluations = (matches) => {
       acc.totalGoalError += Number(match.evaluation.totalGoalError || 0);
       acc.totalGoalsError += Number(match.evaluation.totalGoalsError || 0);
       acc.expectedGoalError += Number(match.evaluation.expectedGoalError || 0);
+      if (match.evaluation.brierScore != null && Number.isFinite(Number(match.evaluation.brierScore))) {
+        acc.brierScore += Number(match.evaluation.brierScore);
+        acc.brierSamples += 1;
+      }
+      if (match.evaluation.outcomeLogLoss != null && Number.isFinite(Number(match.evaluation.outcomeLogLoss))) {
+        acc.outcomeLogLoss += Number(match.evaluation.outcomeLogLoss);
+        acc.outcomeLogLossSamples += 1;
+      }
+      if (match.evaluation.scorelineLogLoss != null && Number.isFinite(Number(match.evaluation.scorelineLogLoss))) {
+        acc.scorelineLogLoss += Number(match.evaluation.scorelineLogLoss);
+        acc.scorelineLogLossSamples += 1;
+      }
+      if (match.evaluation.actualScoreProbability != null && Number.isFinite(Number(match.evaluation.actualScoreProbability))) {
+        acc.actualScoreProbability += Number(match.evaluation.actualScoreProbability);
+        acc.actualScoreProbabilitySamples += 1;
+      }
       return acc;
     },
-    { exactScore: 0, winner: 0, draw: 0, direction: 0, totalGoalError: 0, totalGoalsError: 0, expectedGoalError: 0 }
+    {
+      exactScore: 0,
+      winner: 0,
+      draw: 0,
+      direction: 0,
+      totalGoalError: 0,
+      totalGoalsError: 0,
+      expectedGoalError: 0,
+      brierScore: 0,
+      brierSamples: 0,
+      outcomeLogLoss: 0,
+      outcomeLogLossSamples: 0,
+      scorelineLogLoss: 0,
+      scorelineLogLossSamples: 0,
+      actualScoreProbability: 0,
+      actualScoreProbabilitySamples: 0,
+    }
   );
 
   summary.averageGoalError = matches.length ? Number((summary.totalGoalError / matches.length).toFixed(2)) : 0;
   summary.averageTotalGoalsError = matches.length ? Number((summary.totalGoalsError / matches.length).toFixed(2)) : 0;
   summary.averageExpectedGoalError = matches.length ? Number((summary.expectedGoalError / matches.length).toFixed(2)) : 0;
+  summary.averageBrierScore = summary.brierSamples
+    ? Number((summary.brierScore / summary.brierSamples).toFixed(3))
+    : null;
+  summary.averageOutcomeLogLoss = summary.outcomeLogLossSamples
+    ? Number((summary.outcomeLogLoss / summary.outcomeLogLossSamples).toFixed(3))
+    : null;
+  summary.averageScorelineLogLoss = summary.scorelineLogLossSamples
+    ? Number((summary.scorelineLogLoss / summary.scorelineLogLossSamples).toFixed(3))
+    : null;
+  summary.averageActualScoreProbability = summary.actualScoreProbabilitySamples
+    ? Number((summary.actualScoreProbability / summary.actualScoreProbabilitySamples).toFixed(2))
+    : null;
 
   return summary;
 };
@@ -607,6 +652,28 @@ const renderProbabilityBuckets = (buckets = []) => {
   `;
 };
 
+const renderProbabilityQuality = (summary = {}) => {
+  const hasMetrics =
+    summary.averageBrierScore !== null &&
+    summary.averageBrierScore !== undefined &&
+    summary.averageScorelineLogLoss !== null &&
+    summary.averageScorelineLogLoss !== undefined;
+  if (!hasMetrics) return "";
+
+  return `
+    <section class="details-card">
+      <h3>Qualidade probabilística</h3>
+      <div class="calibration-grid">
+        ${calibrationItem("Brier do resultado", formatStatDecimal(summary.averageBrierScore))}
+        ${calibrationItem("Log-loss do resultado", formatStatDecimal(summary.averageOutcomeLogLoss))}
+        ${calibrationItem("Log-loss do placar", formatStatDecimal(summary.averageScorelineLogLoss))}
+        ${calibrationItem("Chance média do placar real", `${formatStatDecimal(summary.averageActualScoreProbability)}%`)}
+      </div>
+      <p>Quanto menores Brier e log-loss, melhor. Essas métricas penalizam probabilidades confiantes quando o resultado real é improvável para o modelo.</p>
+    </section>
+  `;
+};
+
 const renderAccuracyByGameType = (rows = []) => {
   if (!rows.length) return "";
 
@@ -623,6 +690,7 @@ const renderAccuracyByGameType = (rows = []) => {
                 <small>${row.hits || 0}/${row.total || 0} geral</small>
                 <small>${row.exactRate || 0}% placar exato</small>
                 <small>${formatStatDecimal(row.averageGoalError)} erro gols</small>
+                ${row.averageBrierScore !== null && row.averageBrierScore !== undefined ? `<small>${formatStatDecimal(row.averageBrierScore)} Brier</small>` : ""}
               </div>
             `
           )
@@ -668,6 +736,7 @@ const renderHealthStatus = () => {
         ${calibrationItem("Histórico", systemHealth.historyStorage || "-")}
         ${calibrationItem("Simulações", systemHealth.simulationHistoryStorage || "-")}
         ${calibrationItem("Snapshots", systemHealth.simulationSnapshots || 0)}
+        ${calibrationItem("Processando cenários", systemHealth.simulationRefreshing ? "Sim" : "Não")}
         ${calibrationItem("Última Copa", formatHistoryDate(systemHealth.worldCupUpdatedAt))}
         ${calibrationItem("Simulação", formatHistoryDate(systemHealth.simulationGeneratedAt))}
       </div>
@@ -689,7 +758,10 @@ const renderCalibration = (calibration) => {
     <section class="details-card">
       <h3>Ajuste automático do modelo</h3>
       <div class="calibration-grid">
-        ${calibrationItem("Jogos avaliados", calibration.evaluated)}
+        ${calibrationItem("Jogos do modelo atual", calibration.currentVersionEvaluated ?? calibration.evaluated)}
+        ${calibrationItem("Base histórica", calibration.priorEvaluated || 0)}
+        ${calibrationItem("Peso do modelo atual", `${Math.round((calibration.versionWeight || 0) * 100)}%`)}
+        ${calibrationItem("Fonte do ajuste", calibration.calibrationSource || "-")}
         ${calibrationItem("Força da amostra", `${Math.round((calibration.confidenceFactor || 0) * 100)}%`)}
         ${calibrationItem("Peso da forma", calibration.formMultiplier)}
         ${calibrationItem("Impacto jogadores", calibration.playerImpactMultiplier)}
@@ -698,7 +770,7 @@ const renderCalibration = (calibration) => {
         ${calibrationItem("Viés de gols", formatSignedDecimal(calibration.goalBias))}
         ${calibrationItem("Tendência a empate", calibration.drawBias > 0 ? `+${calibration.drawBias}` : calibration.drawBias)}
       </div>
-      <p>Esses parâmetros mudam conforme as premonições são avaliadas. O ajuste de gols usa o erro médio para reduzir ou aumentar levemente o volume dos placares.</p>
+      <p>O modelo atual assume gradualmente a calibração conforme seus próprios jogos terminam. O histórico antigo funciona apenas como referência reduzida para evitar ajustes bruscos com amostra pequena.</p>
     </section>
   `;
 };
@@ -855,6 +927,8 @@ const simulationCacheKey = () =>
       .join("|") || "",
   ].join("::");
 
+const clampNumber = (value, min, max) => Math.min(max, Math.max(min, value));
+
 const hashString = (value) => {
   let hash = 2166136261;
   for (let index = 0; index < value.length; index += 1) {
@@ -874,9 +948,6 @@ const seededRandom = (seed) => {
     return ((value ^ (value >>> 14)) >>> 0) / 4294967296;
   };
 };
-
-const clampNumber = (value, min, max) => Math.min(max, Math.max(min, value));
-const goalDistributionCache = new Map();
 
 const ensureProjectionTeam = (table, groupName, teamKey) => {
   if (table[groupName][teamKey]) return table[groupName][teamKey];
@@ -1003,36 +1074,82 @@ const projectionExpectedGoals = (match) => {
   };
 };
 
-const goalDistributionFor = (lambda, max = 6) => {
-  const safeLambda = clampNumber(lambda, 0.05, max);
-  const key = `${safeLambda.toFixed(2)}:${max}`;
-  if (goalDistributionCache.has(key)) return goalDistributionCache.get(key);
+const localScoreMatrixCache = new Map();
 
-  const distribution = [];
-  let probability = Math.exp(-safeLambda);
-  let cumulative = probability;
-  distribution.push(cumulative);
-
-  for (let goals = 1; goals < max; goals += 1) {
-    probability *= safeLambda / goals;
-    cumulative += probability;
-    distribution.push(cumulative);
-  }
-
-  distribution.push(1);
-  goalDistributionCache.set(key, distribution);
-  return distribution;
+const poissonProbability = (goals, expected) => {
+  let factorial = 1;
+  for (let value = 2; value <= goals; value += 1) factorial *= value;
+  return (Math.exp(-expected) * expected ** goals) / factorial;
 };
 
-const samplePoissonGoals = (lambda, rng, max = 6) => {
-  const distribution = goalDistributionFor(lambda, max);
-  const roll = rng();
+const dixonColesAdjustment = (homeGoals, awayGoals, expectedHome, expectedAway, rho = -0.08) => {
+  if (homeGoals === 0 && awayGoals === 0) return 1 - expectedHome * expectedAway * rho;
+  if (homeGoals === 0 && awayGoals === 1) return 1 + expectedHome * rho;
+  if (homeGoals === 1 && awayGoals === 0) return 1 + expectedAway * rho;
+  if (homeGoals === 1 && awayGoals === 1) return 1 - rho;
+  return 1;
+};
 
-  for (let goals = 0; goals < distribution.length; goals += 1) {
-    if (roll <= distribution[goals]) return goals;
+const localScoreProbabilityMatrix = (expectedHome, expectedAway, rho = -0.08) => {
+  const cacheKey = `${Number(expectedHome).toFixed(3)}:${Number(expectedAway).toFixed(3)}:${rho.toFixed(3)}`;
+  if (localScoreMatrixCache.has(cacheKey)) return localScoreMatrixCache.get(cacheKey);
+
+  const highestExpected = Math.max(expectedHome, expectedAway);
+  const maxGoals = clampNumber(Math.ceil(highestExpected + 4 * Math.sqrt(highestExpected)), 6, 10);
+  const scorelines = [];
+  let total = 0;
+
+  for (let homeGoals = 0; homeGoals <= maxGoals; homeGoals += 1) {
+    for (let awayGoals = 0; awayGoals <= maxGoals; awayGoals += 1) {
+      const probability = Math.max(
+        0,
+        poissonProbability(homeGoals, expectedHome) *
+          poissonProbability(awayGoals, expectedAway) *
+          dixonColesAdjustment(homeGoals, awayGoals, expectedHome, expectedAway, rho)
+      );
+      scorelines.push({ homeGoals, awayGoals, probability });
+      total += probability;
+    }
   }
 
-  return max;
+  const normalized = scorelines
+    .map((scoreline) => ({ ...scoreline, probability: total ? scoreline.probability / total : 0 }))
+    .sort((first, second) => second.probability - first.probability);
+  const chances = normalized.reduce(
+    (result, scoreline) => {
+      result[scoreDirection(scoreline.homeGoals, scoreline.awayGoals)] += scoreline.probability;
+      return result;
+    },
+    { home: 0, draw: 0, away: 0 }
+  );
+  const matrix = { scorelines: normalized, chances };
+
+  if (localScoreMatrixCache.size > 2000) localScoreMatrixCache.clear();
+  localScoreMatrixCache.set(cacheKey, matrix);
+  return matrix;
+};
+
+const scorelineFromMatrix = (matrix, outcome = null, rng = null, maxCandidates = null) => {
+  const allCandidates = outcome
+    ? matrix.scorelines.filter((scoreline) => scoreDirection(scoreline.homeGoals, scoreline.awayGoals) === outcome)
+    : matrix.scorelines;
+  const candidates = maxCandidates ? allCandidates.slice(0, maxCandidates) : allCandidates;
+  if (!candidates.length) return { home: 0, away: 0, source: "prediction" };
+
+  if (!rng) {
+    return { home: candidates[0].homeGoals, away: candidates[0].awayGoals, source: "prediction" };
+  }
+
+  const total = candidates.reduce((sum, scoreline) => sum + scoreline.probability, 0) || 1;
+  let roll = rng() * total;
+
+  for (const scoreline of candidates) {
+    roll -= scoreline.probability;
+    if (roll <= 0) return { home: scoreline.homeGoals, away: scoreline.awayGoals, source: "prediction" };
+  }
+
+  const fallback = candidates[candidates.length - 1];
+  return { home: fallback.homeGoals, away: fallback.awayGoals, source: "prediction" };
 };
 
 const scoreDirection = (home, away) => {
@@ -1041,35 +1158,9 @@ const scoreDirection = (home, away) => {
   return "draw";
 };
 
-const forceOutcomeScore = (expected, outcome, rng) => {
-  if (outcome === "draw") {
-    const goals = samplePoissonGoals((expected.home + expected.away) / 2, rng, 5);
-    return { home: goals, away: goals, source: "prediction" };
-  }
-
-  if (outcome === "home") {
-    const away = samplePoissonGoals(expected.away * 0.85, rng, 4);
-    const home = clampNumber(Math.max(away + 1, samplePoissonGoals(expected.home * 1.08, rng, 6)), 1, 6);
-    return { home, away, source: "prediction" };
-  }
-
-  const home = samplePoissonGoals(expected.home * 0.85, rng, 4);
-  const away = clampNumber(Math.max(home + 1, samplePoissonGoals(expected.away * 1.08, rng, 6)), 1, 6);
-  return { home, away, source: "prediction" };
-};
-
 const scoreForOutcome = (match, outcome, rng) => {
   const expected = projectionExpectedGoals(match);
-
-  for (let attempt = 0; attempt < 10; attempt += 1) {
-    const home = samplePoissonGoals(expected.home, rng, 6);
-    const away = samplePoissonGoals(expected.away, rng, 6);
-    if (scoreDirection(home, away) === outcome) {
-      return { home, away, source: "prediction" };
-    }
-  }
-
-  return forceOutcomeScore(expected, outcome, rng);
+  return scorelineFromMatrix(localScoreProbabilityMatrix(expected.home, expected.away), outcome, rng);
 };
 
 const randomProjectionScore = (match, rng) => {
@@ -1481,16 +1572,59 @@ const knockoutExpectedGoals = (home, away) => {
   const diff = homeWeight - awayWeight;
 
   return {
-    home: clampNumber(1.15 + diff / 38 + Number(home?.goalsFor || 0) * 0.025, 0.25, 3.8),
-    away: clampNumber(1.05 - diff / 40 + Number(away?.goalsFor || 0) * 0.025, 0.25, 3.8),
+    home: clampNumber(1.1 + diff / 39 + Number(home?.goalsFor || 0) * 0.025, 0.25, 3.8),
+    away: clampNumber(1.1 - diff / 39 + Number(away?.goalsFor || 0) * 0.025, 0.25, 3.8),
   };
 };
 
-const projectedKnockoutScore = (home, away, homeWins, rng = null) => {
+const knockoutScoreModel = (home, away) => {
   const expected = knockoutExpectedGoals(home, away);
-  const generator = rng || seededRandom(hashString(`${safeTeamKey(home)}-${safeTeamKey(away)}`));
-  const score = forceOutcomeScore(expected, homeWins ? "home" : "away", generator);
-  return { home: score.home, away: score.away };
+  const matrix = localScoreProbabilityMatrix(expected.home, expected.away);
+  const strengthTiebreakChance = knockoutWinChance(home, away);
+
+  return {
+    matrix,
+    homeAdvanceChance: clampNumber(
+      matrix.chances.home + matrix.chances.draw * strengthTiebreakChance,
+      0.05,
+      0.95
+    ),
+  };
+};
+
+const projectedKnockoutScore = (home, away, rng = null, scoreModel = null) => {
+  const model = scoreModel || knockoutScoreModel(home, away);
+  return scorelineFromMatrix(model.matrix, null, rng);
+};
+
+const projectedBracketScore = (scoreModel, homeWins, tiebreakHomeChance, rng) => {
+  const candidates = scoreModel.matrix.scorelines
+    .map((scoreline) => {
+      const direction = scoreDirection(scoreline.homeGoals, scoreline.awayGoals);
+      const compatible =
+        direction === "draw" || (homeWins && direction === "home") || (!homeWins && direction === "away");
+      if (!compatible) return null;
+
+      const advancementWeight =
+        direction === "draw" ? (homeWins ? tiebreakHomeChance : 1 - tiebreakHomeChance) : 1;
+      return {
+        ...scoreline,
+        projectedProbability: scoreline.probability * advancementWeight,
+      };
+    })
+    .filter(Boolean)
+    .sort((first, second) => second.projectedProbability - first.projectedProbability)
+    .slice(0, 12);
+  const total = candidates.reduce((sum, scoreline) => sum + scoreline.projectedProbability, 0) || 1;
+  let roll = rng() * total;
+
+  for (const scoreline of candidates) {
+    roll -= scoreline.projectedProbability;
+    if (roll <= 0) return { home: scoreline.homeGoals, away: scoreline.awayGoals, source: "prediction" };
+  }
+
+  const fallback = candidates[0] || { homeGoals: homeWins ? 1 : 0, awayGoals: homeWins ? 0 : 1 };
+  return { home: fallback.homeGoals, away: fallback.awayGoals, source: "prediction" };
 };
 
 const knockoutResultFor = (match, home, away, rng = null) => {
@@ -1508,13 +1642,30 @@ const knockoutResultFor = (match, home, away, rng = null) => {
     };
   }
 
-  const homeWins = rng ? rng() < knockoutWinChance(home, away) : knockoutWinChance(home, away) >= 0.5;
+  const scoreModel = knockoutScoreModel(home, away);
+  const deterministic = !rng;
+  const generator = rng || seededRandom(hashString(`v3:${match.id}:${safeTeamKey(home)}:${safeTeamKey(away)}`));
+  const strengthTiebreakChance = knockoutWinChance(home, away);
+  const projectedHomeWins = scoreModel.homeAdvanceChance >= 0.5;
+  const score = deterministic
+    ? projectedBracketScore(scoreModel, projectedHomeWins, strengthTiebreakChance, generator)
+    : projectedKnockoutScore(home, away, generator, scoreModel);
+  const direction = scoreDirection(score.home, score.away);
+  const homeWins = deterministic
+    ? projectedHomeWins
+    : direction === "home"
+      ? true
+      : direction === "away"
+        ? false
+        : generator() < strengthTiebreakChance;
   return {
     home,
     away,
     winner: homeWins ? home : away,
     loser: homeWins ? away : home,
-    score: projectedKnockoutScore(home, away, homeWins, rng),
+    score,
+    decidedBy: direction === "draw" ? "penalties" : "regulation",
+    homeAdvanceChance: Math.round(scoreModel.homeAdvanceChance * 100),
     source: "simulation",
   };
 };
@@ -1783,13 +1934,13 @@ const renderBracketTeam = (team, score, simulationMode = false, options = {}) =>
 const renderBracketProbability = (home, away) => {
   const homeTitle = Number(home?.probabilities?.champion || 0);
   const awayTitle = Number(away?.probabilities?.champion || 0);
-  const homeWin = Math.round(knockoutWinChance(home, away) * 100);
+  const homeWin = Math.round(knockoutScoreModel(home, away).homeAdvanceChance * 100);
   const awayWin = 100 - homeWin;
 
   return `
     <div class="bracket-probability">
       <span>Título ${homeTitle}% / ${awayTitle}%</span>
-      <span>Vitória ${homeWin}% / ${awayWin}%</span>
+      <span>Classificação ${homeWin}% / ${awayWin}%</span>
     </div>
   `;
 };
@@ -1863,7 +2014,7 @@ const renderSimulationBracketView = () => {
   return `
     <section class="round32-simulation simulation-bracket-view">
       ${renderSimulationSummary(simulation)}
-      <div class="bracket-instructions simulation-note">Chave simulada com os classificados projetados e avanço calculado pela força atual.</div>
+      <div class="bracket-instructions simulation-note">Chave simulada com os classificados projetados e avanço calculado pela matriz probabilística de placares.</div>
       ${renderBracketBoard(rounds, bracketProjectionContext, { mode: "simulation" })}
     </section>
   `;
@@ -1968,27 +2119,56 @@ const renderBracketColumn = (round, side, index, projectionContext, options = {}
   </section>
 `;
 
-const renderCenterMatch = (label, match, extraClass = "", projectionContext, options = {}) => `
-  <section class="center-match-block ${extraClass}">
-    <h3>${label}</h3>
-    ${renderBracketMatch(match, "center", projectionContext, options)}
-  </section>
-`;
+const renderCenterMatch = (label, match, extraClass = "", projectionContext, options = {}) => {
+  const centerRole = extraClass.includes("third-place") ? "thirdPlace" : extraClass.includes("final") ? "final" : "";
+
+  return `
+    <section class="center-match-block ${extraClass}">
+      <h3>${label}</h3>
+      ${renderBracketMatch(match, "center", projectionContext, { ...options, centerRole })}
+    </section>
+  `;
+};
 
 const renderBracketMatch = (match, side = "", projectionContext = null, options = {}) => {
-  const projectedHome = projectionContext?.participants?.[`${match.id}:home`];
-  const projectedAway = projectionContext?.participants?.[`${match.id}:away`];
-  const home = projectedHome || appData.teams[match.home];
-  const away = projectedAway || appData.teams[match.away];
+  const centerHome =
+    options.centerRole === "thirdPlace"
+      ? projectionContext?.roundLosers?.semifinal?.[1]
+      : options.centerRole === "final"
+        ? projectionContext?.roundWinners?.semifinal?.[1]
+        : null;
+  const centerAway =
+    options.centerRole === "thirdPlace"
+      ? projectionContext?.roundLosers?.semifinal?.[2]
+      : options.centerRole === "final"
+        ? projectionContext?.roundWinners?.semifinal?.[2]
+        : null;
+  const projectedHome = centerHome || projectionContext?.participants?.[`${match.id}:home`];
+  const projectedAway = centerAway || projectionContext?.participants?.[`${match.id}:away`];
   const simulationMode = options.mode === "simulation";
   const officialMode = options.mode === "official";
   const projectedResult = simulationMode ? projectionContext?.results?.[match.id] : null;
-  const displayScore =
+  const resolvedHome =
+    simulationMode && projectionContext && !projectedHome
+      ? resolveBracketParticipant(match, "home", projectionContext)
+      : null;
+  const resolvedAway =
+    simulationMode && projectionContext && !projectedAway
+      ? resolveBracketParticipant(match, "away", projectionContext)
+      : null;
+  const home = projectedHome || projectedResult?.home || resolvedHome || appData.teams[match.home];
+  const away = projectedAway || projectedResult?.away || resolvedAway || appData.teams[match.away];
+  let displayScore =
     officialMode && !(isFinished(match) || isLive(match))
       ? null
       : projectedResult
         ? { ...projectedResult.score, label: "Simulação", chance: "Simulação", kind: "prediction" }
         : bracketScoreFor(match, home, away);
+  if (projectedResult?.decidedBy === "penalties" && displayScore) {
+    const winnerKey = safeTeamKey(projectedResult.winner);
+    if (winnerKey === safeTeamKey(home)) displayScore = { ...displayScore, home: `${displayScore.home} (p)` };
+    if (winnerKey === safeTeamKey(away)) displayScore = { ...displayScore, away: `${displayScore.away} (p)` };
+  }
   const projected = simulationMode && Boolean(home?.projectedFromSlot || away?.projectedFromSlot);
 
   return `
@@ -2017,6 +2197,30 @@ const statRow = (label, homeValue, awayValue, suffix = "") => `
     <strong>${awayValue}${suffix}</strong>
   </div>
 `;
+
+const renderLikelyScorelines = (prediction) => {
+  const scorelines = Array.isArray(prediction?.topScorelines) ? prediction.topScorelines.slice(0, 3) : [];
+  if (!scorelines.length) return "";
+
+  return `
+    <section class="likely-scorelines" aria-label="Placares mais prováveis">
+      <strong>Placares mais prováveis</strong>
+      <div class="likely-scoreline-list">
+        ${scorelines
+          .map(
+            (scoreline, index) => `
+              <div class="likely-scoreline${index === 0 ? " primary" : ""}">
+                <span>${index === 0 ? "Premonição" : `${index + 1}ª opção`}</span>
+                <strong>${scoreline.homeGoals} x ${scoreline.awayGoals}</strong>
+                <em>${Number(scoreline.probability || 0).toFixed(1)}%</em>
+              </div>
+            `
+          )
+          .join("")}
+      </div>
+    </section>
+  `;
+};
 
 const renderPredictionSnapshotCard = (title, prediction, home, away, emptyText = "Sem registro salvo para esse momento.") => {
   if (!prediction) {
@@ -2047,6 +2251,7 @@ const renderPredictionSnapshotCard = (title, prediction, home, away, emptyText =
         <span>Empate: ${prediction.drawChance ?? 0}%</span>
         <span>${away.name}: ${prediction.awayChance ?? 0}%</span>
       </div>
+      ${renderLikelyScorelines(prediction)}
       ${expectedGoals}
     </article>
   `;
@@ -2113,6 +2318,7 @@ const renderDetails = (matchId) => {
       <h3>${home.name} ${score.home} x ${score.away} ${away.name}</h3>
       <p>${match.prediction.reason}</p>
       ${match.prediction.expectedGoals ? `<p><strong>Gols esperados:</strong> ${home.name} ${match.prediction.expectedGoals.home.toFixed(2)} x ${match.prediction.expectedGoals.away.toFixed(2)} ${away.name}</p>` : ""}
+      ${renderLikelyScorelines(match.prediction)}
     </article>
     ${renderPredictionFactors(home, away)}
     <article class="details-card">

@@ -82,6 +82,132 @@ test("probabilidades da premonicao ficam normalizadas", () => {
   assert.ok(prediction.homeGoals > prediction.awayGoals);
 });
 
+test("matriz Poisson escolhe o placar mais provável sem arredondar os gols esperados", () => {
+  const matrix = _test.scoreProbabilityMatrix(1.64, 0.42, {
+    ...modelCalibration(),
+    dixonColesRho: -0.08,
+  });
+
+  assert.equal(matrix.homeGoals, 1);
+  assert.equal(matrix.awayGoals, 0);
+  assert.equal(matrix.topScorelines.length, 3);
+  assert.ok(matrix.topScorelines[0].probability >= matrix.topScorelines[1].probability);
+  assert.equal(matrix.chances.homeChance + matrix.chances.drawChance + matrix.chances.awayChance, 100);
+});
+
+test("correcao Dixon-Coles aumenta a probabilidade de empate baixo", () => {
+  const withoutCorrection = _test.scoreProbabilityMatrix(1.1, 1.1, { dixonColesRho: 0 });
+  const withCorrection = _test.scoreProbabilityMatrix(1.1, 1.1, { dixonColesRho: -0.08 });
+  const drawProbability = (matrix) =>
+    matrix.topScorelines.find((scoreline) => scoreline.homeGoals === 1 && scoreline.awayGoals === 1)?.probability || 0;
+
+  assert.ok(drawProbability(withCorrection) > drawProbability(withoutCorrection));
+});
+
+test("premonicao inclui as tres alternativas de placar do novo modelo", () => {
+  resetHistory();
+
+  const prediction = predictMatch(
+    { home: "home", away: "away" },
+    {
+      home: {
+        name: "Time da casa",
+        fifaRank: 12,
+        strength: { overall: 78, attack: 79, defense: 77, form: 1.1, players: 0.8 },
+      },
+      away: {
+        name: "Visitante",
+        fifaRank: 28,
+        strength: { overall: 70, attack: 69, defense: 70, form: 0.2, players: 0.1 },
+      },
+    }
+  );
+
+  assert.equal(prediction.topScorelines.length, 3);
+  assert.equal(prediction.homeGoals, prediction.topScorelines[0].homeGoals);
+  assert.equal(prediction.awayGoals, prediction.topScorelines[0].awayGoals);
+  assert.equal(prediction.scoreModel.method, "Poisson com correção Dixon-Coles");
+});
+
+test("mata-mata equilibrado divide a chance de classificacao perto de 50%", () => {
+  resetHistory();
+
+  const home = { name: "Time A", weight: 75, fifaRank: 15, points: 6, goalDifference: 2 };
+  const away = { name: "Time B", weight: 75, fifaRank: 15, points: 6, goalDifference: 2 };
+  const model = _test.knockoutScoreModel(home, away, modelCalibration());
+
+  assert.ok(model.homeAdvanceChance >= 0.48);
+  assert.ok(model.homeAdvanceChance <= 0.52);
+  assert.ok(model.matrix.chances.drawChance > 0);
+});
+
+test("mata-mata usa a matriz Dixon-Coles para favorito e placar", () => {
+  resetHistory();
+
+  const favorite = { name: "Favorito", weight: 88, fifaRank: 3, points: 7, goalDifference: 5 };
+  const underdog = { name: "Azarão", weight: 58, fifaRank: 55, points: 3, goalDifference: -1 };
+  const calibration = modelCalibration();
+  const model = _test.knockoutScoreModel(favorite, underdog, calibration);
+  const score = _test.projectedKnockoutScore(favorite, underdog, null, calibration, model);
+
+  assert.ok(model.homeAdvanceChance > 0.7);
+  assert.ok(score.home >= score.away);
+  assert.ok(score.probability > 0);
+});
+
+test("matriz mantém empates possíveis no mata-mata", () => {
+  const matrix = _test.scoreProbabilityMatrix(1.35, 1.1, { dixonColesRho: -0.08 });
+  const score = _test.scorelineFromMatrix(matrix);
+
+  assert.ok(Number.isInteger(score.home));
+  assert.ok(Number.isInteger(score.away));
+  assert.ok(matrix.scorelines.some((item) => item.homeGoals === item.awayGoals));
+});
+
+test("chave principal não classifica o azarão contra a probabilidade exibida", () => {
+  resetHistory();
+
+  const underdog = { name: "Marrocos", teamKey: "mar", weight: 70, fifaRank: 20, points: 4, goalDifference: 1 };
+  const favorite = { name: "França", teamKey: "fra", weight: 88, fifaRank: 2, points: 7, goalDifference: 5 };
+  const result = _test.knockoutResultFor(
+    { teams: { mar: underdog, fra: favorite } },
+    { id: 99, status: "NS", home: "mar", away: "fra" },
+    underdog,
+    favorite,
+    null,
+    modelCalibration()
+  );
+
+  assert.equal(result.winner.name, "França");
+  assert.ok(result.homeAdvanceChance < 50);
+  assert.ok(
+    result.score.away > result.score.home ||
+      (result.score.away === result.score.home && result.decidedBy === "penalties")
+  );
+});
+
+test("cache da simulacao muda quando os gols esperados mudam", () => {
+  const payload = (expectedHome) => ({
+    matches: [
+      {
+        id: 1,
+        status: "NS",
+        prediction: {
+          homeGoals: 1,
+          awayGoals: 0,
+          homeChance: 60,
+          drawChance: 25,
+          awayChance: 15,
+          expectedGoals: { home: expectedHome, away: 0.7 },
+          scoreModel: { rho: -0.08 },
+        },
+      },
+    ],
+  });
+
+  assert.notEqual(_test.simulationCacheKey(payload(1.2)), _test.simulationCacheKey(payload(1.25)));
+});
+
 test("avaliacao separa placar exato, resultado geral e erro de gols", () => {
   const evaluation = evaluatePrediction(
     {
@@ -98,6 +224,161 @@ test("avaliacao separa placar exato, resultado geral e erro de gols", () => {
   assert.equal(evaluation.totalGoalError, 1);
   assert.equal(evaluation.totalGoalsError, 1);
   assert.equal(evaluation.expectedGoalError, 0.9);
+});
+
+test("avaliacao probabilistica recompensa previsao bem calibrada", () => {
+  const correct = evaluatePrediction(
+    {
+      homeGoals: 2,
+      awayGoals: 0,
+      expectedGoals: { home: 1.8, away: 0.5 },
+      homeChance: 78,
+      drawChance: 14,
+      awayChance: 8,
+      scoreModel: { rho: -0.08 },
+    },
+    { home: 2, away: 0 }
+  );
+  const wrong = evaluatePrediction(
+    {
+      homeGoals: 0,
+      awayGoals: 2,
+      expectedGoals: { home: 0.5, away: 1.8 },
+      homeChance: 8,
+      drawChance: 14,
+      awayChance: 78,
+      scoreModel: { rho: -0.08 },
+    },
+    { home: 2, away: 0 }
+  );
+
+  assert.ok(correct.brierScore < wrong.brierScore);
+  assert.ok(correct.outcomeLogLoss < wrong.outcomeLogLoss);
+  assert.ok(correct.actualScoreProbability > 0);
+  assert.ok(correct.scorelineLogLoss > 0);
+});
+
+test("calibracao do v3 usa historico antigo apenas como referencia reduzida", () => {
+  _test.setPredictionHistory({
+    version: 1,
+    matches: {
+      old1: {
+        date: 1,
+        initialPrediction: {
+          homeGoals: 4,
+          awayGoals: 0,
+          winner: "home",
+          homeChance: 80,
+          drawChance: 12,
+          awayChance: 8,
+          modelVersion: "v1-historico",
+        },
+        result: { homeGoals: 1, awayGoals: 0, winner: "home" },
+        evaluation: { direction: true, exactScore: false, totalGoalError: 3 },
+      },
+      current1: {
+        date: 2,
+        initialPrediction: {
+          homeGoals: 1,
+          awayGoals: 1,
+          winner: "draw",
+          homeChance: 32,
+          drawChance: 36,
+          awayChance: 32,
+          modelVersion: "v3-poisson-dixon-coles",
+        },
+        result: { homeGoals: 1, awayGoals: 1, winner: "draw" },
+        evaluation: { direction: true, exactScore: true, totalGoalError: 0 },
+      },
+    },
+  });
+
+  const calibration = modelCalibration();
+
+  assert.equal(calibration.currentVersionEvaluated, 1);
+  assert.equal(calibration.priorEvaluated, 1);
+  assert.ok(calibration.versionWeight > 0);
+  assert.ok(calibration.versionWeight < 0.1);
+  assert.match(calibration.calibrationSource, /modelo atual/);
+});
+
+test("versao nova guarda e avalia previsao paralela sem alterar a oficial", async () => {
+  resetHistory();
+  _test.setPredictionHistory({
+    version: 1,
+    matches: {
+      "30": {
+        id: 30,
+        group: "Grupo A",
+        date: 3000,
+        home: "Time A",
+        away: "Time B",
+        initialPrediction: {
+          homeGoals: 2,
+          awayGoals: 0,
+          winner: "home",
+          homeChance: 70,
+          drawChance: 20,
+          awayChance: 10,
+          modelVersion: "v1-historico",
+        },
+        latestPrediction: null,
+        result: null,
+        evaluation: null,
+      },
+    },
+  });
+
+  const teams = {
+    home: { name: "Time A" },
+    away: { name: "Time B" },
+  };
+
+  await _test.updatePredictionHistory(
+    [
+      {
+        id: 30,
+        status: "NS",
+        group: "Grupo A",
+        timestamp: 3000,
+        home: "home",
+        away: "away",
+        prediction: {
+          homeGoals: 1,
+          awayGoals: 0,
+          expectedGoals: { home: 1.4, away: 0.6 },
+          homeChance: 62,
+          drawChance: 24,
+          awayChance: 14,
+        },
+      },
+    ],
+    teams
+  );
+
+  let record = _test.getPredictionHistory().matches["30"];
+  assert.equal(record.initialPrediction.homeGoals, 2);
+  assert.equal(record.versionPredictions["v3-poisson-dixon-coles"].homeGoals, 1);
+
+  await _test.updatePredictionHistory(
+    [
+      {
+        id: 30,
+        status: "FT",
+        group: "Grupo A",
+        timestamp: 3000,
+        home: "home",
+        away: "away",
+        actualScore: { home: 1, away: 0 },
+      },
+    ],
+    teams
+  );
+
+  record = _test.getPredictionHistory().matches["30"];
+  assert.equal(record.evaluation.exactScore, false);
+  assert.equal(record.versionEvaluations["v3-poisson-dixon-coles"].exactScore, true);
+  assert.equal(modelCalibration().currentVersionEvaluated, 1);
 });
 
 test("rankingRows ordena os times mais fortes primeiro", () => {
@@ -381,6 +662,43 @@ test("seed preenche avaliacao quando ambiente tem histórico sem avaliados", () 
   assert.equal(merged.matches["1"].evaluation.direction, false);
   assert.equal(merged.matches["1"].initialPrediction.homeGoals, 2);
   assert.equal(merged.matches["2"].initialPrediction.homeGoals, 1);
+});
+
+test("recuperacao preenche premonicao inicial sem apagar placar ao vivo", () => {
+  const merged = _test.mergePredictionHistories(
+    {
+      version: 1,
+      matches: {
+        "760473": {
+          initialPrediction: {
+            homeGoals: 0,
+            awayGoals: 2,
+            modelVersion: "v1-historico",
+          },
+        },
+      },
+    },
+    {
+      version: 1,
+      matches: {
+        "760473": {
+          initialPrediction: null,
+          latestPrediction: null,
+          livePrediction: {
+            homeGoals: 1,
+            awayGoals: 2,
+            modelVersion: "v2",
+          },
+          liveScore: { homeGoals: 0, awayGoals: 2 },
+        },
+      },
+    }
+  );
+
+  assert.equal(merged.matches["760473"].initialPrediction.awayGoals, 2);
+  assert.equal(merged.matches["760473"].latestPrediction.awayGoals, 2);
+  assert.equal(merged.matches["760473"].livePrediction.awayGoals, 2);
+  assert.equal(merged.matches["760473"].liveScore.awayGoals, 2);
 });
 
 test("jogo finalizado sem snapshot anterior ganha avaliacao recuperada", async () => {
