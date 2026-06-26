@@ -97,6 +97,16 @@ const teamMark = (team) => {
 const isFinished = (match) => ["FT", "AET", "PEN"].includes(match.status);
 const isLive = (match) => ["LIVE", "1H", "2H", "HT", "ET", "P"].includes(match.status);
 
+const displayedPredictionChance = (prediction) => {
+  if (!prediction) return "0%";
+  const homeGoals = Number(prediction.homeGoals);
+  const awayGoals = Number(prediction.awayGoals);
+
+  if (homeGoals > awayGoals) return `${prediction.homeChance ?? prediction.favoriteChance ?? 0}%`;
+  if (homeGoals < awayGoals) return `${prediction.awayChance ?? prediction.favoriteChance ?? 0}%`;
+  return `Empate ${prediction.drawChance ?? prediction.scorelineChance ?? 0}%`;
+};
+
 const scoreFor = (match) => {
   if (isLive(match) && match.actualScore) {
     return {
@@ -122,7 +132,7 @@ const scoreFor = (match) => {
     home: match.prediction?.homeGoals ?? "-",
     away: match.prediction?.awayGoals ?? "-",
     label: "Premonição",
-    chance: `${match.prediction?.favoriteChance ?? 0}%`,
+    chance: displayedPredictionChance(match.prediction),
     kind: "prediction",
   };
 };
@@ -1583,6 +1593,7 @@ const knockoutScoreModel = (home, away) => {
   const strengthTiebreakChance = knockoutWinChance(home, away);
 
   return {
+    expected,
     matrix,
     homeAdvanceChance: clampNumber(
       matrix.chances.home + matrix.chances.draw * strengthTiebreakChance,
@@ -1597,7 +1608,7 @@ const projectedKnockoutScore = (home, away, rng = null, scoreModel = null) => {
   return scorelineFromMatrix(model.matrix, null, rng);
 };
 
-const projectedBracketScore = (scoreModel, homeWins, tiebreakHomeChance, rng) => {
+const projectedBracketScore = (scoreModel, homeWins, tiebreakHomeChance, advancementChance = scoreModel.homeAdvanceChance) => {
   const candidates = scoreModel.matrix.scorelines
     .map((scoreline) => {
       const direction = scoreDirection(scoreline.homeGoals, scoreline.awayGoals);
@@ -1615,16 +1626,84 @@ const projectedBracketScore = (scoreModel, homeWins, tiebreakHomeChance, rng) =>
     .filter(Boolean)
     .sort((first, second) => second.projectedProbability - first.projectedProbability)
     .slice(0, 12);
-  const total = candidates.reduce((sum, scoreline) => sum + scoreline.projectedProbability, 0) || 1;
-  let roll = rng() * total;
 
-  for (const scoreline of candidates) {
-    roll -= scoreline.projectedProbability;
-    if (roll <= 0) return { home: scoreline.homeGoals, away: scoreline.awayGoals, source: "prediction" };
+  const selected =
+    representativeScoreline(candidates, scoreModel.expected, { advancementChance }) ||
+    candidates[0] ||
+    { homeGoals: homeWins ? 1 : 0, awayGoals: homeWins ? 0 : 1 };
+  return { home: selected.homeGoals, away: selected.awayGoals, source: "prediction" };
+};
+
+const concreteMatchPredictionScore = (match, home, away) => {
+  if (!match?.prediction) return null;
+
+  const originalHome = appData.teams[match.home] || {};
+  const originalAway = appData.teams[match.away] || {};
+  if (originalHome.placeholder || originalAway.placeholder) return null;
+
+  const homeKey = safeTeamKey({ ...originalHome, teamKey: match.home });
+  const awayKey = safeTeamKey({ ...originalAway, teamKey: match.away });
+  if (safeTeamKey(home) !== homeKey || safeTeamKey(away) !== awayKey) return null;
+
+  const homeGoals = Number(match.prediction.homeGoals);
+  const awayGoals = Number(match.prediction.awayGoals);
+  if (!Number.isFinite(homeGoals) || !Number.isFinite(awayGoals)) return null;
+
+  return {
+    home: homeGoals,
+    away: awayGoals,
+    probability: Number(match.prediction.scorelineChance || 0),
+    source: "prediction",
+  };
+};
+
+const representativeScoreline = (candidates, expected, options = {}) => {
+  if (!candidates.length) return null;
+  const topProbability = Number(candidates[0].projectedProbability || candidates[0].probability || 0);
+  const expectedHome = Number(expected?.home);
+  const expectedAway = Number(expected?.away);
+
+  if (!Number.isFinite(expectedHome) || !Number.isFinite(expectedAway)) return candidates[0];
+
+  const advancementChance = Number(options.advancementChance);
+  const favoriteAdvanceChance = Number.isFinite(advancementChance)
+    ? Math.max(advancementChance, 1 - advancementChance)
+    : 1;
+  const expectedGap = Math.abs(expectedHome - expectedAway);
+  const bestDraw = candidates
+    .filter((scoreline) => scoreline.homeGoals === scoreline.awayGoals)
+    .sort((first, second) => {
+      const firstDistance = scorelineExpectedDistance(first, expectedHome, expectedAway);
+      const secondDistance = scorelineExpectedDistance(second, expectedHome, expectedAway);
+      return firstDistance - secondDistance || second.projectedProbability - first.projectedProbability;
+    })[0];
+
+  if (
+    bestDraw &&
+    favoriteAdvanceChance <= 0.68 &&
+    expectedGap <= 0.55 &&
+    Number(bestDraw.projectedProbability || bestDraw.probability || 0) >= topProbability * 0.48
+  ) {
+    return bestDraw;
   }
 
-  const fallback = candidates[0] || { homeGoals: homeWins ? 1 : 0, awayGoals: homeWins ? 0 : 1 };
-  return { home: fallback.homeGoals, away: fallback.awayGoals, source: "prediction" };
+  return candidates
+    .filter((scoreline) => Number(scoreline.projectedProbability || scoreline.probability || 0) >= topProbability * 0.78)
+    .sort((first, second) => {
+      const firstDistance = scorelineExpectedDistance(first, expectedHome, expectedAway);
+      const secondDistance = scorelineExpectedDistance(second, expectedHome, expectedAway);
+      return firstDistance - secondDistance || second.projectedProbability - first.projectedProbability;
+    })[0];
+};
+
+const scorelineExpectedDistance = (scoreline, expectedHome, expectedAway) => {
+  const expectedTotal = expectedHome + expectedAway;
+  const scoreTotal = scoreline.homeGoals + scoreline.awayGoals;
+  return (
+    Math.abs(scoreline.homeGoals - expectedHome) +
+    Math.abs(scoreline.awayGoals - expectedAway) +
+    Math.abs(scoreTotal - expectedTotal) * 0.35
+  );
 };
 
 const knockoutResultFor = (match, home, away, rng = null) => {
@@ -1647,12 +1726,18 @@ const knockoutResultFor = (match, home, away, rng = null) => {
   const generator = rng || seededRandom(hashString(`v3:${match.id}:${safeTeamKey(home)}:${safeTeamKey(away)}`));
   const strengthTiebreakChance = knockoutWinChance(home, away);
   const projectedHomeWins = scoreModel.homeAdvanceChance >= 0.5;
+  const predictionScore = deterministic ? concreteMatchPredictionScore(match, home, away) : null;
   const score = deterministic
-    ? projectedBracketScore(scoreModel, projectedHomeWins, strengthTiebreakChance, generator)
+    ? predictionScore ||
+      projectedBracketScore(scoreModel, projectedHomeWins, strengthTiebreakChance, scoreModel.homeAdvanceChance)
     : projectedKnockoutScore(home, away, generator, scoreModel);
   const direction = scoreDirection(score.home, score.away);
   const homeWins = deterministic
-    ? projectedHomeWins
+    ? direction === "home"
+      ? true
+      : direction === "away"
+        ? false
+        : projectedHomeWins
     : direction === "home"
       ? true
       : direction === "away"
@@ -2095,10 +2180,15 @@ const groupKnockoutRounds = (matches) => {
       return {
         key: round.key,
         name: round.name,
-        matches: roundMatches.sort((a, b) => a.timestamp - b.timestamp),
+        matches: roundMatches.sort((a, b) => bracketSortValue(a) - bracketSortValue(b) || a.timestamp - b.timestamp),
       };
     })
     .filter((round) => round.matches.length);
+};
+
+const bracketSortValue = (match) => {
+  const number = Number(match?.bracketGameNumber);
+  return Number.isFinite(number) && number > 0 ? number : 999;
 };
 
 const renderBracketRound = (round) => `

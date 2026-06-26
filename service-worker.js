@@ -1,4 +1,4 @@
-const CACHE_NAME = "copa-2026-v3";
+const CACHE_NAME = "copa-2026-v5";
 const CORE_ASSETS = ["/", "/index.html", "/styles.css", "/app.js", "/favicon.svg", "/manifest.webmanifest"];
 
 self.addEventListener("install", (event) => {

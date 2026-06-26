@@ -23,6 +23,7 @@ function resetHistory() {
 test("usa a tabela revisada de ranking FIFA como base unica", () => {
   assert.equal(getSeedRank("Paises Baixos"), 7);
   assert.equal(getSeedRank("Marrocos"), 8);
+  assert.equal(getSeedRank("Senegal"), 19);
   assert.equal(getSeedRank("Suecia"), 43);
   assert.equal(getSeedRank("Haiti"), 83);
 });
@@ -129,6 +130,30 @@ test("premonicao inclui as tres alternativas de placar do novo modelo", () => {
   assert.equal(prediction.scoreModel.method, "Poisson com correção Dixon-Coles");
 });
 
+test("premonicao usa gols esperados para evitar zerar ataque competitivo", () => {
+  resetHistory();
+
+  const prediction = predictMatch(
+    { home: "norway", away: "france" },
+    {
+      norway: {
+        name: "Noruega",
+        fifaRank: 33,
+        strength: { overall: 66, attack: 62, defense: 51, form: 2, players: 4 },
+      },
+      france: {
+        name: "Franca",
+        fifaRank: 1,
+        strength: { overall: 96, attack: 100, defense: 95, form: 7, players: 4 },
+      },
+    }
+  );
+
+  assert.equal(prediction.homeGoals, 1);
+  assert.equal(prediction.awayGoals, 3);
+  assert.ok(prediction.expectedGoals.home >= 0.6);
+});
+
 test("mata-mata equilibrado divide a chance de classificacao perto de 50%", () => {
   resetHistory();
 
@@ -184,6 +209,72 @@ test("chave principal não classifica o azarão contra a probabilidade exibida",
     result.score.away > result.score.home ||
       (result.score.away === result.score.home && result.decidedBy === "penalties")
   );
+});
+
+test("placar representativo da chave evita 1x0 automatico quando xG aponta volume maior", () => {
+  resetHistory();
+
+  const favorite = { name: "Favorito", teamKey: "fav", weight: 84, fifaRank: 8, points: 7, goalDifference: 5, goalsFor: 6 };
+  const underdog = { name: "Azarao", teamKey: "dog", weight: 58, fifaRank: 60, points: 3, goalDifference: -2, goalsFor: 1 };
+  const result = _test.knockoutResultFor(
+    { teams: { fav: favorite, dog: underdog } },
+    { id: 123, status: "NS", home: "fav", away: "dog" },
+    favorite,
+    underdog,
+    null,
+    modelCalibration()
+  );
+
+  assert.equal(result.score.home, 2);
+  assert.equal(result.score.away, 0);
+});
+
+test("chave equilibrada pode exibir empate decidido nos penaltis", () => {
+  resetHistory();
+
+  const home = { name: "Time A", teamKey: "a", weight: 72, fifaRank: 18, points: 5, goalDifference: 1, goalsFor: 4 };
+  const away = { name: "Time B", teamKey: "b", weight: 71, fifaRank: 20, points: 5, goalDifference: 0, goalsFor: 4 };
+  const result = _test.knockoutResultFor(
+    { teams: { a: home, b: away } },
+    { id: 124, status: "NS", home: "a", away: "b" },
+    home,
+    away,
+    null,
+    modelCalibration()
+  );
+
+  assert.equal(result.score.home, result.score.away);
+  assert.equal(result.decidedBy, "penalties");
+});
+
+test("chave simulada usa a premonicao do confronto direto", () => {
+  resetHistory();
+
+  const brazil = { name: "Brasil", teamKey: "bra", weight: 86, fifaRank: 5, points: 7, goalDifference: 6 };
+  const japan = { name: "Japao", teamKey: "jpn", weight: 61, fifaRank: 18, points: 4, goalDifference: 1 };
+  const result = _test.knockoutResultFor(
+    { teams: { bra: brazil, jpn: japan } },
+    {
+      id: 760487,
+      status: "NS",
+      home: "bra",
+      away: "jpn",
+      prediction: {
+        homeGoals: 2,
+        awayGoals: 0,
+        scorelineChance: 17.9,
+      },
+    },
+    brazil,
+    japan,
+    null,
+    modelCalibration()
+  );
+
+  assert.equal(result.score.home, 2);
+  assert.equal(result.score.away, 0);
+  assert.equal(result.winner.name, "Brasil");
+  assert.equal(result.decidedBy, "regulation");
 });
 
 test("cache da simulacao muda quando os gols esperados mudam", () => {
@@ -391,6 +482,20 @@ test("rankingRows ordena os times mais fortes primeiro", () => {
   assert.deepEqual(
     rows.map((row) => row.key),
     ["b", "a", "c"]
+  );
+});
+
+test("mata-mata usa numero oficial da chave em vez de horario", () => {
+  const rounds = _test.groupKnockoutRounds([
+    { id: 760486, group: "16 avos de final", timestamp: 1, bracketGameNumber: 1 },
+    { id: 760487, group: "16 avos de final", timestamp: 2, bracketGameNumber: 4 },
+    { id: 760489, group: "16 avos de final", timestamp: 3, bracketGameNumber: 2 },
+    { id: 760488, group: "16 avos de final", timestamp: 4, bracketGameNumber: 3 },
+  ]);
+
+  assert.deepEqual(
+    rounds[0].matches.map((match) => match.id),
+    [760486, 760489, 760488, 760487]
   );
 });
 

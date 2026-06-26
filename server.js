@@ -23,6 +23,52 @@ const APP_TIME_ZONE = process.env.APP_TIME_ZONE || "Europe/Lisbon";
 const NEUTRAL_MATCH_BASE_GOALS = 1.13;
 const FIFA_RANKING_SOURCE = "Ranking FIFA masculino - base manual revisada em 2026-06-19";
 const MODEL_VERSION = "v3-poisson-dixon-coles";
+const ESPN_2026_BRACKET_GAME_NUMBERS = {
+  round32: {
+    760486: 1,
+    760489: 2,
+    760488: 3,
+    760487: 4,
+    760492: 5,
+    760490: 6,
+    760491: 7,
+    760495: 8,
+    760494: 9,
+    760493: 10,
+    760496: 11,
+    760497: 12,
+    760498: 13,
+    760500: 14,
+    760501: 15,
+    760499: 16,
+  },
+  round16: {
+    760502: 1,
+    760503: 2,
+    760504: 3,
+    760505: 4,
+    760506: 5,
+    760507: 6,
+    760509: 7,
+    760508: 8,
+  },
+  quarterfinal: {
+    760510: 1,
+    760511: 2,
+    760512: 3,
+    760513: 4,
+  },
+  semifinal: {
+    760514: 1,
+    760515: 2,
+  },
+  thirdPlace: {
+    760516: 1,
+  },
+  Final: {
+    760517: 1,
+  },
+};
 
 let cache = {
   expiresAt: 0,
@@ -76,6 +122,7 @@ const fifaRankingBase = {
   uruguai: 16,
   japan: 18,
   japao: 18,
+  senegal: 19,
   switzerland: 19,
   suica: 19,
   iran: 20,
@@ -841,6 +888,37 @@ function scorelineFromMatrix(matrix, outcome = null, rng = null, maxCandidates =
   };
 }
 
+function predictionScoreline(scoreModel, expectedHome, expectedAway) {
+  const candidates = scoreModel.scorelines.slice(0, 12).map((scoreline) => ({
+    ...scoreline,
+    projectedProbability: scoreline.probability,
+  }));
+  const selected =
+    representativeScoreline(candidates, { home: expectedHome, away: expectedAway }, { probabilityWindow: 0.58 }) ||
+    scoreModel.scorelines[0] ||
+    { homeGoals: 0, awayGoals: 0, probability: 0 };
+
+  return {
+    homeGoals: selected.homeGoals,
+    awayGoals: selected.awayGoals,
+    probability: Number((Number(selected.probability || 0) * 100).toFixed(1)),
+  };
+}
+
+function predictionTopScorelines(scoreModel, selectedScoreline) {
+  const selected = {
+    homeGoals: selectedScoreline.homeGoals,
+    awayGoals: selectedScoreline.awayGoals,
+    probability: selectedScoreline.probability,
+  };
+  const alternatives = scoreModel.topScorelines.filter(
+    (scoreline) =>
+      scoreline.homeGoals !== selected.homeGoals || scoreline.awayGoals !== selected.awayGoals
+  );
+
+  return [selected, ...alternatives].slice(0, 3);
+}
+
 function predictMatch(match, teams) {
   const calibration = modelCalibration();
   const home = teams[match.home];
@@ -854,17 +932,15 @@ function predictMatch(match, teams) {
   const attackGapAway = awayProfile.attack - homeProfile.defense;
   const formGap = homeProfile.form - awayProfile.form;
   const playerGap = homeProfile.players - awayProfile.players;
-  const expectedHome = expectedGoals(
-    NEUTRAL_MATCH_BASE_GOALS + diff / 33 + attackGapHome / 42 + formGap / 85 + playerGap / 70,
-    calibration
-  );
-  const expectedAway = expectedGoals(
-    NEUTRAL_MATCH_BASE_GOALS - diff / 33 + attackGapAway / 42 - formGap / 85 - playerGap / 70,
-    calibration
-  );
+  const rawExpectedHome = NEUTRAL_MATCH_BASE_GOALS + diff / 33 + attackGapHome / 42 + formGap / 85 + playerGap / 70;
+  const rawExpectedAway = NEUTRAL_MATCH_BASE_GOALS - diff / 33 + attackGapAway / 42 - formGap / 85 - playerGap / 70;
+  const expectedHome = expectedGoals(rawExpectedHome, calibration, expectedGoalFloor(homeProfile));
+  const expectedAway = expectedGoals(rawExpectedAway, calibration, expectedGoalFloor(awayProfile));
   const scoreModel = scoreProbabilityMatrix(expectedHome, expectedAway, calibration);
+  const selectedScoreline = predictionScoreline(scoreModel, expectedHome, expectedAway);
+  const topScorelines = predictionTopScorelines(scoreModel, selectedScoreline);
   const chances = scoreModel.chances;
-  const { homeGoals, awayGoals } = scoreModel;
+  const { homeGoals, awayGoals } = selectedScoreline;
   const favoriteChance = Math.max(chances.homeChance, chances.awayChance);
   const agreement = Math.sign(diff || 0) === Math.sign((expectedHome - expectedAway) || 0) ? 6 : -4;
   const confidence = clamp(
@@ -884,8 +960,8 @@ function predictMatch(match, teams) {
     drawChance: chances.drawChance,
     awayChance: chances.awayChance,
     favoriteChance,
-    scorelineChance: scoreModel.scorelineChance,
-    topScorelines: scoreModel.topScorelines,
+    scorelineChance: selectedScoreline.probability,
+    topScorelines,
     confidence,
     reason: buildReason(home, away, diff, homeWeight, awayWeight, expectedHome, expectedAway),
     scoreModel: {
@@ -914,13 +990,22 @@ function predictionProfile(team) {
   };
 }
 
-function expectedGoals(value, calibration) {
+function expectedGoals(value, calibration, floor = 0.15) {
   const evaluated = calibration.effectiveEvaluated ?? calibration.evaluated ?? 0;
   const exactRate = calibration.exactRate || 0;
   const exactCorrection = evaluated ? clamp(1 + (0.28 - exactRate) * 0.08, 0.96, 1.05) : 1;
   const goalErrorCorrection = calibration.goalVolumeMultiplier || 1;
   const scoreCorrection = clamp(exactCorrection * goalErrorCorrection, 0.86, 1.1);
-  return clamp(value * scoreCorrection, 0.15, 4.8);
+  return clamp(value * scoreCorrection, floor, 4.8);
+}
+
+function expectedGoalFloor(profile = {}) {
+  const overall = Number(profile.overall || profile.base || 50);
+  const attack = Number(profile.attack || overall);
+  const form = Math.max(0, Number(profile.form || 0));
+  const players = Math.max(0, Number(profile.players || 0));
+
+  return clamp(0.32 + (overall - 45) * 0.006 + (attack - 45) * 0.006 + form * 0.012 + players * 0.018, 0.28, 0.82);
 }
 
 function buildReason(home, away, diff, homeWeight, awayWeight, expectedHome, expectedAway) {
@@ -2036,6 +2121,7 @@ function convertEspnEvent(event, teams) {
     day: formatMatchDay(event.date),
     time: formatMatchTime(event.date, { short: status }),
     timestamp: Math.floor(new Date(event.date).getTime() / 1000),
+    bracketGameNumber: bracketGameNumberForEspnEvent(event),
     status,
     home: homeKey,
     away: awayKey,
@@ -2073,6 +2159,22 @@ function displayRoundName(event, competition) {
   if (month === 7 && day === 19) return "Final";
 
   return translateRoundName(note || event.season?.slug || "Copa do Mundo");
+}
+
+function bracketGameNumberForEspnEvent(event) {
+  const roundKey = espnSeasonSlugToRoundKey(event?.season?.slug);
+  const id = String(event?.id || "");
+  return ESPN_2026_BRACKET_GAME_NUMBERS[roundKey]?.[id] || null;
+}
+
+function espnSeasonSlugToRoundKey(slug) {
+  if (slug === "round-of-32") return "round32";
+  if (slug === "round-of-16") return "round16";
+  if (slug === "quarterfinals") return "quarterfinal";
+  if (slug === "semifinals") return "semifinal";
+  if (slug === "third-place") return "thirdPlace";
+  if (slug === "final") return "Final";
+  return "";
 }
 
 function translateRoundName(text) {
@@ -2569,7 +2671,7 @@ function groupKnockoutRounds(matches) {
       return {
         key: round.key,
         name: round.name,
-        matches: roundMatches.sort((a, b) => a.timestamp - b.timestamp),
+        matches: roundMatches.sort((a, b) => bracketSortValue(a) - bracketSortValue(b) || a.timestamp - b.timestamp),
       };
     })
     .filter((round) => round.matches.length);
@@ -2577,6 +2679,11 @@ function groupKnockoutRounds(matches) {
 
 function roundMatches(rounds, key) {
   return rounds.find((round) => round.key === key)?.matches || [];
+}
+
+function bracketSortValue(match) {
+  const number = Number(match?.bracketGameNumber);
+  return Number.isFinite(number) && number > 0 ? number : 999;
 }
 
 function groupLetterFromName(groupName) {
@@ -2788,7 +2895,7 @@ function projectedKnockoutScore(home, away, rng = null, calibration = modelCalib
   return { home: score.home, away: score.away, probability: score.probability };
 }
 
-function projectedBracketScore(scoreModel, homeWins, tiebreakHomeChance, rng) {
+function projectedBracketScore(scoreModel, homeWins, tiebreakHomeChance, advancementChance = scoreModel.homeAdvanceChance) {
   const candidates = scoreModel.matrix.scorelines
     .map((scoreline) => {
       const direction = resultDirection(scoreline.homeGoals, scoreline.awayGoals);
@@ -2806,26 +2913,92 @@ function projectedBracketScore(scoreModel, homeWins, tiebreakHomeChance, rng) {
     .filter(Boolean)
     .sort((first, second) => second.projectedProbability - first.projectedProbability)
     .slice(0, 12);
-  const total = candidates.reduce((sum, scoreline) => sum + scoreline.projectedProbability, 0) || 1;
-  let roll = rng() * total;
 
-  for (const scoreline of candidates) {
-    roll -= scoreline.projectedProbability;
-    if (roll <= 0) {
-      return {
-        home: scoreline.homeGoals,
-        away: scoreline.awayGoals,
-        probability: Number((scoreline.probability * 100).toFixed(1)),
-      };
-    }
+  const selected =
+    representativeScoreline(candidates, scoreModel.expected, { advancementChance }) ||
+    candidates[0] ||
+    { homeGoals: homeWins ? 1 : 0, awayGoals: homeWins ? 0 : 1, probability: 0 };
+  return {
+    home: selected.homeGoals,
+    away: selected.awayGoals,
+    probability: Number((selected.probability * 100).toFixed(1)),
+  };
+}
+
+function concreteMatchPredictionScore(payload, match, home, away) {
+  if (!match?.prediction) return null;
+
+  const originalHome = payload.teams[match.home] || {};
+  const originalAway = payload.teams[match.away] || {};
+  if (originalHome.placeholder || originalAway.placeholder) return null;
+
+  const homeKey = safeSimulationTeamKey({ ...originalHome, teamKey: match.home });
+  const awayKey = safeSimulationTeamKey({ ...originalAway, teamKey: match.away });
+  if (safeSimulationTeamKey(home) !== homeKey || safeSimulationTeamKey(away) !== awayKey) return null;
+
+  const homeGoals = Number(match.prediction.homeGoals);
+  const awayGoals = Number(match.prediction.awayGoals);
+  if (!Number.isFinite(homeGoals) || !Number.isFinite(awayGoals)) return null;
+
+  return {
+    home: homeGoals,
+    away: awayGoals,
+    probability: Number(match.prediction.scorelineChance || 0),
+    source: "prediction",
+  };
+}
+
+function representativeScoreline(candidates, expected, options = {}) {
+  if (!candidates.length) return null;
+  const topProbability = Number(candidates[0].projectedProbability || candidates[0].probability || 0);
+  const expectedHome = Number(expected?.home);
+  const expectedAway = Number(expected?.away);
+
+  if (!Number.isFinite(expectedHome) || !Number.isFinite(expectedAway)) return candidates[0];
+
+  const advancementChance = Number(options.advancementChance);
+  const favoriteAdvanceChance = Number.isFinite(advancementChance)
+    ? Math.max(advancementChance, 1 - advancementChance)
+    : 1;
+  const expectedGap = Math.abs(expectedHome - expectedAway);
+  const bestDraw = candidates
+    .filter((scoreline) => scoreline.homeGoals === scoreline.awayGoals)
+    .sort((first, second) => {
+      const firstDistance = scorelineExpectedDistance(first, expectedHome, expectedAway);
+      const secondDistance = scorelineExpectedDistance(second, expectedHome, expectedAway);
+      return firstDistance - secondDistance || second.projectedProbability - first.projectedProbability;
+    })[0];
+
+  if (
+    bestDraw &&
+    favoriteAdvanceChance <= 0.68 &&
+    expectedGap <= 0.55 &&
+    Number(bestDraw.projectedProbability || bestDraw.probability || 0) >= topProbability * 0.48
+  ) {
+    return bestDraw;
   }
 
-  const fallback = candidates[0] || { homeGoals: homeWins ? 1 : 0, awayGoals: homeWins ? 0 : 1, probability: 0 };
-  return {
-    home: fallback.homeGoals,
-    away: fallback.awayGoals,
-    probability: Number((fallback.probability * 100).toFixed(1)),
-  };
+  return candidates
+    .filter(
+      (scoreline) =>
+        Number(scoreline.projectedProbability || scoreline.probability || 0) >=
+        topProbability * Number(options.probabilityWindow ?? 0.78)
+    )
+    .sort((first, second) => {
+      const firstDistance = scorelineExpectedDistance(first, expectedHome, expectedAway);
+      const secondDistance = scorelineExpectedDistance(second, expectedHome, expectedAway);
+      return firstDistance - secondDistance || second.projectedProbability - first.projectedProbability;
+    })[0];
+}
+
+function scorelineExpectedDistance(scoreline, expectedHome, expectedAway) {
+  const expectedTotal = expectedHome + expectedAway;
+  const scoreTotal = scoreline.homeGoals + scoreline.awayGoals;
+  return (
+    Math.abs(scoreline.homeGoals - expectedHome) +
+    Math.abs(scoreline.awayGoals - expectedAway) +
+    Math.abs(scoreTotal - expectedTotal) * 0.35
+  );
 }
 
 function knockoutResultFor(payload, match, home, away, rng = null, calibration = modelCalibration()) {
@@ -2852,12 +3025,18 @@ function knockoutResultFor(payload, match, home, away, rng = null, calibration =
     );
   const strengthTiebreakChance = knockoutWinChance(home, away);
   const projectedHomeWins = scoreModel.homeAdvanceChance >= 0.5;
+  const predictionScore = deterministic ? concreteMatchPredictionScore(payload, match, home, away) : null;
   const score = deterministic
-    ? projectedBracketScore(scoreModel, projectedHomeWins, strengthTiebreakChance, generator)
+    ? predictionScore ||
+      projectedBracketScore(scoreModel, projectedHomeWins, strengthTiebreakChance, scoreModel.homeAdvanceChance)
     : projectedKnockoutScore(home, away, generator, calibration, scoreModel);
   const direction = resultDirection(score.home, score.away);
   const homeWins = deterministic
-    ? projectedHomeWins
+    ? direction === "home"
+      ? true
+      : direction === "away"
+        ? false
+        : projectedHomeWins
     : direction === "home"
       ? true
       : direction === "away"
@@ -4057,6 +4236,7 @@ module.exports = {
     scoreProbabilityMatrix,
     scorelineFromMatrix,
     simulationCacheKey,
+    groupKnockoutRounds,
     knockoutScoreModel,
     projectedKnockoutScore,
     knockoutResultFor,
